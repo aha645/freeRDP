@@ -30,7 +30,8 @@ Linux 타깃을 빌드하려면 Linux용 크로스 컴파일러와, 대상 시�
 ```
 rdp/
 ├── scripts/
-│   ├── build.sh        # 실행 진입점: bash scripts/build.sh <타깃>
+│   ├── build.sh        # 빌드: bash scripts/build.sh <타깃>
+│   ├── connect.sh      # 접속: bash scripts/connect.sh <사용자ID> [서버:포트]
 │   └── fetch.sh        # 소스·도구의 URL·SHA-256 목록, 다운로드·압축 해제
 ├── src/                # (자동 생성) 소스 압축 파일과 압축을 푼 소스
 │   ├── openssl-3.5.0/   SDL3-3.2.28/   freetype-2.13.3/
@@ -92,17 +93,19 @@ xcode-select --install
 
 ## 실행 방법
 
-비밀번호는 명령에 넣지 말고, 실행 중에 입력하세요.
-
-- `/dynamic-resolution`: 창 크기에 맞춰 원격 해상도를 바꿉니다.
-- `/cert:ignore`: 서버 인증서 확인을 건너뜁니다. 이 옵션이 없으면 인증서 확인 질문에 답하지 못한 채 대기하다 서버가 연결을 끊을 수 있습니다. SSH 터널(`127.0.0.1`)로 접속할 때만 사용하고, 터널 없이 직접 접속할 때는 `/cert:tofu`(첫 접속 인증서를 저장해 이후 변경 시 경고)를 사용하세요.
-
-macOS:
+SSH 터널을 먼저 연 뒤, macOS에서는 사용자 ID만 넣어 스크립트를 실행합니다. 비밀번호는 실행 중에 입력합니다.
 
 ```sh
-cd dist/macos-x86_64
-./sdl-freerdp /v:127.0.0.1:13389 /u:RDP사용자명 /dynamic-resolution /cert:ignore
+bash scripts/connect.sh RDP사용자명                    # 기본 서버: 127.0.0.1:13389
+bash scripts/connect.sh RDP사용자명 127.0.0.1:23389    # 서버 주소·포트 지정
 ```
+
+`scripts/connect.sh`가 하는 일:
+- 현재 Mac의 CPU에 맞는 실행 파일(`dist/macos-<CPU>/sdl-freerdp`)을 고릅니다.
+- 서버 포트가 열려 있는지 먼저 확인합니다. 터널이 꺼져 있으면 바로 알려줍니다.
+- 아래 옵션을 붙여 실행합니다.
+  - `/dynamic-resolution`: 창 크기에 맞춰 원격 해상도를 바꿉니다.
+  - `/cert:ignore`: 서버 인증서 확인을 건너뜁니다. 이 옵션이 없으면 인증서 확인 질문에 답하지 못한 채 대기하다 서버가 연결을 끊을 수 있습니다. SSH 터널(`127.0.0.1`)로 접속할 때만 사용하세요. 터널 없이 직접 접속할 때는 `/cert:tofu`(첫 접속 인증서를 저장하고 이후 변경 시 경고)로 실행 파일을 직접 실행하세요.
 
 Windows (`sdl-freerdp.exe`를 Windows PC에 복사한 뒤):
 
