@@ -119,6 +119,7 @@ cmake_build FreeRDP "$SRC/freerdp-$FREERDP_VERSION" "$WORK/install" \
 # 5) 결과물: dist/<타깃>/ 실행 파일 (사용한 라이브러리·라이선스는 README.md에 명시)
 rm -rf "$OUT"; mkdir -p "$OUT"
 cp "$WORK/install/bin/$EXE" "$OUT/"
+[[ "$TARGET" == windows-* ]] && cp "$ROOT/scripts/connect.bat" "$OUT/"   # Windows용 접속 스크립트
 
 # 시스템 외 동적 라이브러리에 의존하지 않는지 확인
 if [[ "$TARGET" == macos-* ]]; then
