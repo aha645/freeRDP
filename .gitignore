@@ -1,0 +1,41 @@
+# Downloaded third-party sources, archives, and build trees
+/src/
+
+# Installed binaries, libraries, headers, and package metadata
+/bin/
+/include/
+/lib/
+/share/
+
+# Other local build outputs
+/build/
+/build-*/
+CMakeCache.txt
+CMakeFiles/
+*.o
+*.a
+*.dylib
+*.log
+
+# macOS metadata
+.DS_Store
+._*
+
+# Local environment, credentials, and connection profiles
+.env
+.env.*
+!.env.example
+/.aws/
+/.ssh/
+*.pem
+*.key
+*.p12
+*.pfx
+*.rdp
+/config.local.*
+/credentials*
+
+# Editor temporary files
+*.swp
+*.swo
+*~
