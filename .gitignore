@@ -1,21 +1,11 @@
-# Downloaded third-party sources, archives, and build trees
+# scripts/build.sh 가 내려받거나 생성하는 폴더 (저장소에 넣지 않음)
 /src/
-
-# Installed binaries, libraries, headers, and package metadata
-/bin/
-/include/
-/lib/
-/share/
-
-# Other local build outputs
+/tools/
 /build/
-/build-*/
-CMakeCache.txt
-CMakeFiles/
-*.o
-*.a
-*.dylib
-*.log
+/dist/
+
+# 이전 구조에서 옮겨 둔 파일 (확인 후 삭제)
+/_old/
 
 # macOS metadata
 .DS_Store
@@ -25,26 +15,13 @@ CMakeFiles/
 .env
 .env.*
 !.env.example
-/.aws/
-/.ssh/
 *.pem
 *.key
 *.p12
 *.pfx
 *.rdp
-/config.local.*
-/credentials*
 
 # Editor temporary files
 *.swp
 *.swo
 *~
-
-# Cross-platform builds and release archives
-/.build/
-/.build-*/
-/dist/
-/scripts/__pycache__/
-
-# Local Python environment for build tools
-/.build-tools/
