@@ -94,17 +94,20 @@ xcode-select --install
 
 비밀번호는 명령에 넣지 말고, 실행 중에 입력하세요.
 
+- `/dynamic-resolution`: 창 크기에 맞춰 원격 해상도를 바꿉니다.
+- `/cert:ignore`: 서버 인증서 확인을 건너뜁니다. 이 옵션이 없으면 인증서 확인 질문에 답하지 못한 채 대기하다 서버가 연결을 끊을 수 있습니다. SSH 터널(`127.0.0.1`)로 접속할 때만 사용하고, 터널 없이 직접 접속할 때는 `/cert:tofu`(첫 접속 인증서를 저장해 이후 변경 시 경고)를 사용하세요.
+
 macOS:
 
 ```sh
 cd dist/macos-x86_64
-./sdl-freerdp /v:127.0.0.1:13389 /u:RDP사용자명 /dynamic-resolution
+./sdl-freerdp /v:127.0.0.1:13389 /u:RDP사용자명 /dynamic-resolution /cert:ignore
 ```
 
 Windows (`sdl-freerdp.exe`를 Windows PC에 복사한 뒤):
 
 ```powershell
-.\sdl-freerdp.exe /v:127.0.0.1:13389 /u:RDP사용자명 /dynamic-resolution
+.\sdl-freerdp.exe /v:127.0.0.1:13389 /u:RDP사용자명 /dynamic-resolution /cert:ignore
 ```
 
 macOS 실행 파일은 코드 서명·공증을 하지 않았습니다. 다른 Mac에 내려받아 실행하려면 먼저 아래 명령을 한 번 실행하세요.
