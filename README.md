@@ -1,29 +1,29 @@
-# FreeRDP SDL 클라이언트: iMac에서 타깃별 빌드
+# FreeRDP 3.24.2: 타깃별 자동 빌드
 
-iMac(Intel, macOS)을 호스트로 사용합니다. **타깃을 지정해 스크립트 하나만 실행하면** 다음 과정이 자동으로 진행됩니다.
+**타깃을 지정해 스크립트 하나만 실행하면** 다음 과정이 자동으로 진행됩니다.
 소스·도구 다운로드 → SHA-256 확인 → 압축 해제 → 빌드 → 결과물 생성.
-Docker나 가상 머신은 사용하지 않습니다. iMac에서 실행되는 도구만으로 빌드할 수 없는 타깃은 "빌드할 수 없음" 메시지를 출력하고 즉시 종료합니다.
+Docker나 가상 머신은 사용하지 않습니다. 현재 호스트에서 빌드할 수 없는 타깃은 이유를 출력하고 즉시 종료합니다.
 
 ```sh
-bash scripts/build.sh macos-x86_64     # Intel Mac용
-bash scripts/build.sh macos-arm64      # Apple Silicon Mac용
-bash scripts/build.sh windows-x86_64   # Windows 64비트용
+bash scripts/build.sh <타깃>
 ```
 
-빌드 결과는 실행 파일 하나입니다: `dist/<타깃>/sdl-freerdp` (Windows는 `sdl-freerdp.exe`와 접속 스크립트 `connect.bat`).
-다른 라이브러리를 정적으로 포함하므로 이 파일만 복사하면 대상 컴퓨터에서 실행됩니다. 포함된 라이브러리는 아래 "사용한 소스와 라이선스"에 적었습니다.
+## 호스트와 타깃
 
-## 타깃별 지원 현황
+호스트는 빌드하는 컴퓨터입니다. **Windows PC에서는 WSL2(Windows에 내장된 Ubuntu)** 안에서 실행합니다.
 
-| 타깃 | 상태 | 컴파일러 (위치) |
-| --- | --- | --- |
-| `macos-x86_64` | 빌드 가능, iMac에서 실행 확인 | Apple Clang (Xcode Command Line Tools) |
-| `macos-arm64` | 빌드 가능, 실행 확인은 Apple Silicon Mac에서 | Apple Clang의 `-arch arm64` 교차 빌드 |
-| `windows-x86_64` | 빌드 가능, 실행 확인은 Windows 10 이상에서 | llvm-mingw (`tools/windows-x86_64/`) |
-| `linux-x86_64` | **iMac에서 빌드 불가** | — |
-| `linux-arm64` | **iMac에서 빌드 불가** | — |
+| 타깃 | 결과물 | macOS 호스트 (iMac) | Linux 호스트 (Windows의 WSL2) |
+| --- | --- | --- | --- |
+| `macos-x86_64` | `dist/macos-x86_64/sdl-freerdp` | ✅ 빌드·실행 확인 | ❌ Apple SDK가 macOS에만 있음 |
+| `macos-arm64` | `dist/macos-arm64/sdl-freerdp` | ✅ 빌드 확인 | ❌ |
+| `windows-x86_64` | `dist/windows-x86_64/sdl-freerdp.exe`, `connect.bat` | ✅ 빌드 확인 | 지원 (미검증) |
+| `android-arm64` | `dist/android-arm64/{include,lib}` 앱용 정적 라이브러리 | ✅ 빌드·링크 확인 | 지원 (미검증) |
+| `linux-x86_64` | `dist/linux-x86_64/sdl-freerdp` | ❌ | 지원 (미검증) |
+| `linux-arm64` | `dist/linux-arm64/sdl-freerdp` | ❌ | 지원 (미검증, 교차 빌드) |
 
-Linux 타깃을 빌드하려면 Linux용 크로스 컴파일러와, 대상 시스템의 X11 헤더·라이브러리(sysroot)가 필요합니다. 이 둘이 `tools/`에 없으므로 스크립트는 "빌드할 수 없습니다"를 출력하고 종료합니다. Linux용 결과물이 필요하면 해당 Linux 컴퓨터에서 직접 빌드해야 합니다.
+- **데스크톱 타깃:** SDL3 클라이언트 실행 파일 하나를 만듭니다. 다른 라이브러리를 정적으로 포함하므로 이 파일만 복사하면 대상 컴퓨터에서 실행됩니다(Linux는 X11·PulseAudio 같은 데스크톱 시스템 라이브러리 사용).
+- **android-arm64:** 실행 파일이 아니라 Flutter 앱(plugin)에 넣을 FreeRDP·OpenSSL 헤더와 정적 라이브러리를 만듭니다. 설계는 [docs/plugin-design.md](docs/plugin-design.md)를 참고하세요.
+- **"미검증":** Linux 호스트용 스크립트는 작성했지만 WSL2에서 아직 실제로 빌드해 보지 않았다는 뜻입니다.
 
 ## 폴더 구조
 
@@ -31,43 +31,47 @@ Linux 타깃을 빌드하려면 Linux용 크로스 컴파일러와, 대상 시�
 rdp/
 ├── scripts/
 │   ├── build.sh        # 빌드: bash scripts/build.sh <타깃>
+│   ├── fetch.sh        # 소스·도구의 URL·SHA-256 목록, 다운로드·압축 해제
 │   ├── connect.sh      # 접속(macOS): bash scripts/connect.sh <사용자ID> [서버:포트]
-│   ├── connect.bat     # 접속(Windows): 빌드 시 dist/windows-x86_64/에 함께 복사
-│   └── fetch.sh        # 소스·도구의 URL·SHA-256 목록, 다운로드·압축 해제
+│   └── connect.bat     # 접속(Windows): 빌드 시 dist/windows-x86_64/에 함께 복사
+├── docs/
+│   └── plugin-design.md  # Flutter FFI plugin 설계
 ├── src/                # (자동 생성) 소스 압축 파일과 압축을 푼 소스
 │   ├── openssl-3.5.0/   SDL3-3.2.28/   freetype-2.13.3/
 │   ├── SDL3_ttf-3.2.2/  freerdp-3.24.2/
 │   └── *.tar.gz
-├── tools/              # (자동 생성) 빌드 도구
-│   ├── macos/              # iMac에서 실행되는 공통 도구 (모든 타깃이 사용)
-│   │   ├── cmake-3.31.6-macos-universal/
-│   │   └── ninja-1.12.1/
-│   └── windows-x86_64/     # Windows 타깃용 크로스 컴파일러 (clang, windres, ar 등)
-│       └── llvm-mingw-20250528-ucrt-macos-universal/
+├── tools/              # (자동 생성) 빌드 도구 — 호스트에 맞는 배포판을 받음
+│   ├── macos/ | linux/     # 호스트 공통 도구: CMake 3.31.6, Ninja 1.12.1
+│   ├── windows-x86_64/     # Windows 타깃용 크로스 컴파일러: llvm-mingw
+│   └── android/            # Android 타깃용 NDK r27c
 ├── build/<타깃>/       # (자동 생성) 중간 산출물. deps/ 아래에 정적 의존성 라이브러리
-└── dist/<타깃>/         # (자동 생성) 결과물: 실행 파일 1개
+└── dist/<타깃>/         # (자동 생성) 결과물
 ```
 
 - `src/`, `tools/`, `build/`, `dist/`는 Git에 포함하지 않습니다. 스크립트를 실행하면 다시 생성됩니다.
 - 이미 받은 파일은 다시 받지 않고, 이미 빌드한 의존성은 다시 빌드하지 않습니다.
-- macOS 타깃은 별도의 타깃 전용 도구가 필요 없습니다. Xcode Command Line Tools의 Apple Clang이 Intel·ARM64를 모두 지원합니다.
+- 타깃 전용 컴파일러의 출처:
+  - macOS 타깃: Xcode Command Line Tools의 Apple Clang
+  - Linux 타깃: Ubuntu 패키지(gcc, arm64는 `gcc-aarch64-linux-gnu`)
+  - Windows·Android 타깃: `tools/` 아래에 자동으로 받습니다.
 
 ## build.sh 처리 순서
 
-1. **다운로드·압축 해제** (`fetch.sh`): 소스와 도구 압축 파일을 `src/`, `tools/`에 받습니다. SHA-256을 확인한 뒤 압축을 풉니다.
-2. **도구 설정**: `tools/macos`의 CMake와 Ninja를 PATH에 추가합니다. Windows 타깃이면 `tools/windows-x86_64`의 llvm-mingw도 사용합니다.
+1. **다운로드·압축 해제** (`fetch.sh`): 소스와 현재 호스트용 도구를 `src/`, `tools/`에 받습니다. SHA-256을 확인한 뒤 압축을 풉니다.
+2. **도구 설정**: 호스트용 CMake·Ninja와 타깃용 컴파일러(llvm-mingw, NDK, gcc)를 선택합니다.
 3. **정적 의존성 빌드**: 아래 순서로 빌드해 `build/<타깃>/deps`에 설치합니다.
    OpenSSL 3.5.0 → SDL 3.2.28 → FreeType 2.13.3 → SDL_ttf 3.2.2
-4. **FreeRDP 3.24.2 빌드**: SDL3 클라이언트를 빌드합니다. FFmpeg, Kerberos, 스마트카드 등 부가 기능은 끕니다.
+   Android는 화면을 앱이 그리므로 OpenSSL만 빌드합니다.
+4. **FreeRDP 3.24.2 빌드**: 데스크톱 타깃은 SDL3 클라이언트를, Android는 라이브러리만 빌드합니다. FFmpeg, Kerberos, 스마트카드 등 부가 기능은 끕니다. 클립보드, 소리, 마이크, 해상도 변경 채널은 켜져 있습니다.
 5. **검사·패키징**:
-   - 실행 파일의 CPU 종류를 확인합니다.
-   - 시스템 기본 라이브러리 외에 따로 설치해야 하는 라이브러리가 없는지 확인합니다.
-   - 실행 파일을 `dist/<타깃>/`에 복사합니다.
-   - iMac과 같은 타깃(`macos-x86_64`)이면 `sdl-freerdp /version`을 실행해 동작을 확인합니다.
+   - 결과물의 CPU 종류를 확인합니다.
+   - 실행 파일이 OpenSSL·SDL·FreeRDP를 동적 라이브러리로 요구하지 않는지 확인합니다.
+   - `dist/<타깃>/`에 복사합니다.
+   - 호스트와 같은 타깃이면 `sdl-freerdp /version`을 실행해 동작을 확인합니다.
 
 ## 사용한 소스와 라이선스
 
-실행 파일에는 아래 라이브러리가 정적으로 포함됩니다. 이 실행 파일은 개인·내부 사용을 전제로 합니다. 다른 사람에게 배포할 때는 각 라이선스 전문(`src/` 아래 각 소스의 LICENSE 파일)을 함께 제공해야 합니다.
+결과물에는 아래 라이브러리가 정적으로 포함됩니다. 이 실행 파일은 개인·내부 사용을 전제로 합니다. 다른 사람에게 배포할 때는 각 라이선스 전문(`src/` 아래 각 소스의 LICENSE 파일)을 함께 제공해야 합니다.
 
 | 이름 | 버전 | 라이선스 | 출처 |
 | --- | --- | --- | --- |
@@ -82,15 +86,50 @@ Portions of this software are copyright © The FreeType Project (www.freetype.or
 
 ## 처음 한 번 준비
 
+### macOS 호스트 (iMac)
+
 Xcode Command Line Tools만 설치하면 됩니다(`clang`, `make`, `perl`, `curl`, `tar` 제공). 나머지는 모두 스크립트가 자동으로 받습니다.
 
 ```sh
 xcode-select --install
 ```
 
+### Windows 호스트 (WSL2)
+
+1. PowerShell(관리자)에서 WSL2와 Ubuntu를 설치하고 재부팅합니다.
+   ```powershell
+   wsl --install -d Ubuntu-24.04
+   ```
+2. Ubuntu 터미널에서 기본 도구를 설치하고 저장소를 받습니다. 저장소는 `/mnt/c/...`가 아닌 **WSL 홈 폴더 안**에 두세요. Windows 드라이브 위에서 빌드하면 매우 느립니다.
+   ```sh
+   sudo apt-get update
+   sudo apt-get install -y build-essential perl pkg-config curl unzip file git
+   git clone https://github.com/aha645/freeRDP.git && cd freeRDP
+   bash scripts/build.sh windows-x86_64     # 또는 android-arm64
+   ```
+3. Linux 타깃에 필요한 패키지가 없으면 `build.sh`가 설치 명령을 출력합니다. `linux-x86_64`는 그 명령을 그대로 실행하면 됩니다.
+4. **linux-arm64 준비(처음 한 번):** arm64 패키지를 받을 저장소(ports.ubuntu.com)를 추가해야 합니다. Ubuntu 24.04 기준입니다.
+   ```sh
+   # 기존 저장소는 amd64 전용으로 제한
+   sudo sed -i 's/^Types: deb$/Types: deb\nArchitectures: amd64/' /etc/apt/sources.list.d/ubuntu.sources
+   # arm64 저장소 추가
+   sudo tee /etc/apt/sources.list.d/ubuntu-ports.sources >/dev/null <<'EOF'
+   Types: deb
+   URIs: http://ports.ubuntu.com/ubuntu-ports
+   Suites: noble noble-updates noble-security
+   Components: main restricted universe multiverse
+   Architectures: arm64
+   Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+   EOF
+   sudo dpkg --add-architecture arm64
+   sudo apt-get update
+   bash scripts/build.sh linux-arm64          # 이어서 출력되는 apt 명령을 실행
+   ```
+
 참고:
 - 병렬 작업 수는 `JOBS=4 bash scripts/build.sh <타깃>`처럼 지정합니다. 기본값은 CPU 코어 수입니다.
 - 처음부터 다시 빌드하려면 `build/<타깃>/`을 지우고 실행합니다.
+- Android NDK는 약 700MB~800MB입니다. 첫 `android-arm64` 빌드 때 한 번만 받습니다.
 
 ## 실행 방법
 
