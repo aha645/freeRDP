@@ -45,3 +45,6 @@ CMakeFiles/
 /.build-*/
 /dist/
 /scripts/__pycache__/
+
+# Local Python environment for build tools
+/.build-tools/

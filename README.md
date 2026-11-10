@@ -51,6 +51,119 @@ bash scripts/build.sh
 
 SDL_ttf는 배포 tar.gz의 vendored 의존성 누락으로 발생했던 오류를 피하기 위해 **Git에서 `--recurse-submodules --shallow-submodules`로 받습니다.** HarfBuzz·PlutoSVG·샘플은 비활성화합니다. OpenSSL·SDL·SDL_ttf·FreeRDP는 정적 링크 설정으로 빌드하며 FFmpeg, Kerberos 등은 기존 설정대로 비활성화합니다.
 
+## 플랫폼별 빌드 방법
+
+아래 명령은 각 운영체제에서 직접 실행하는 네이티브 빌드입니다. 다른 운영체제용 바이너리를 만드는 크로스 컴파일은 지원하지 않습니다. 경로에 공백이 없는 작업 폴더를 사용하세요. 이미 저장소를 받았다면 `git clone`을 생략하고 해당 프로젝트 폴더로 이동합니다.
+
+### macOS — Intel / Apple Silicon
+
+Xcode Command Line Tools가 없다면 아래 명령을 실행하고 설치 창의 절차를 완료합니다.
+
+```sh
+xcode-select --install
+```
+
+[Homebrew](https://brew.sh/)가 설치된 터미널에서 도구를 준비합니다. CMake는 별도 Python 가상환경에 3.31.6으로 고정합니다.
+
+```sh
+brew install git ninja python pkgconf
+
+git clone https://github.com/aha645/freeRDP.git
+cd freeRDP
+python3 -m venv .build-tools
+source .build-tools/bin/activate
+python -m pip install cmake==3.31.6
+
+uname -m
+cmake --version
+BUILD_JOBS=6 bash scripts/build.sh
+```
+
+Intel Mac은 `uname -m`이 `x86_64`, Apple Silicon은 `arm64`여야 합니다. Apple Silicon에서는 Rosetta로 실행한 터미널을 사용하지 말고 arm64 Homebrew·Python·컴파일러를 사용하세요. 스크립트는 현재 CPU에 맞춰 OpenSSL 타깃을 자동 선택합니다.
+
+결과는 Intel의 경우 `dist/freerdp-3.24.2-macos-x86_64.tar.gz`와 `dist/freerdp-deps-macos-x86_64.tar.gz`, Apple Silicon의 경우 각각 `macos-arm64` 파일입니다.
+
+### Linux — Ubuntu 22.04 x86_64
+
+Ubuntu 22.04를 기준으로 필요한 컴파일러와 GUI·오디오 개발 라이브러리를 설치합니다. 다른 배포판은 이에 대응하는 개발 패키지를 설치해야 합니다.
+
+```sh
+sudo apt-get update
+sudo apt-get install -y \
+  git build-essential ninja-build perl python3 python3-venv pkg-config \
+  libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev \
+  libxss-dev libxtst-dev libasound2-dev libpulse-dev libwayland-dev \
+  libxkbcommon-dev libgl1-mesa-dev libegl1-mesa-dev libudev-dev
+
+git clone https://github.com/aha645/freeRDP.git
+cd freeRDP
+python3 -m venv .build-tools
+source .build-tools/bin/activate
+python -m pip install cmake==3.31.6
+
+uname -m
+cmake --version
+BUILD_JOBS=6 bash scripts/build.sh
+```
+
+`uname -m`은 `x86_64`여야 합니다. 결과는 `dist/freerdp-3.24.2-linux-x86_64.tar.gz`와 `dist/freerdp-deps-linux-x86_64.tar.gz`입니다. GUI 클라이언트 실행에는 X11 또는 Wayland 데스크톱 환경이 필요합니다.
+
+### Windows — x86_64 / MSYS2 UCRT64
+
+[MSYS2](https://www.msys2.org/)를 설치하고 시작 메뉴에서 **MSYS2 UCRT64** 터미널을 엽니다. PowerShell, Git Bash 및 MSYS 셸에서 아래 빌드를 실행하지 마세요.
+
+먼저 MSYS2를 업데이트합니다.
+
+```sh
+pacman -Syu
+```
+
+업데이트 과정에서 터미널 종료를 요구하면 종료한 뒤 **MSYS2 UCRT64**를 다시 열고 `pacman -Syu`를 한 번 더 실행합니다. 이후 도구를 설치합니다.
+
+```sh
+pacman -S --needed \
+  git make perl \
+  mingw-w64-ucrt-x86_64-gcc \
+  mingw-w64-ucrt-x86_64-cmake \
+  mingw-w64-ucrt-x86_64-ninja \
+  mingw-w64-ucrt-x86_64-python \
+  mingw-w64-ucrt-x86_64-pkgconf
+
+mkdir -p /c/dev
+cd /c/dev
+git clone https://github.com/aha645/freeRDP.git
+cd freeRDP
+
+echo "$MSYSTEM"
+cmake --version
+BUILD_JOBS=6 bash scripts/build.sh
+```
+
+`echo "$MSYSTEM"`의 결과는 `UCRT64`여야 합니다. CMake는 3.31 이상을 사용합니다. Windows SDK는 이 GCC/MinGW 환경용이며 MSVC 프로젝트에 그대로 링크할 수 없습니다.
+
+결과는 `dist/freerdp-3.24.2-windows-x86_64.zip`와 `dist/freerdp-deps-windows-x86_64.tar.gz`입니다. 실행용 ZIP은 포함된 DLL을 `bin/sdl-freerdp.exe`와 같은 폴더에 유지한 채 배포합니다.
+
+### 빌드 결과 확인과 SDK 선택
+
+전체 빌드가 성공하면 스크립트가 패키징한 실행 파일의 `/version`을 자동 실행합니다. 설치 폴더의 실행 파일도 직접 확인할 수 있습니다.
+
+```sh
+# macOS / Linux
+.build/install/bin/sdl-freerdp /version
+
+# Windows: MSYS2 UCRT64
+.build/install/bin/sdl-freerdp.exe /version
+```
+
+필요한 개발 도구를 설치한 뒤 아래 표의 SDK를 사용하면 의존성 빌드를 생략할 수 있습니다. SDK 추출과 실행 명령은 다음 절을 따릅니다.
+
+| 빌드 환경 | 사용할 정적 라이브러리 SDK |
+| --- | --- |
+| Intel Mac | `freerdp-deps-macos-x86_64.tar.gz` |
+| Apple Silicon Mac | `freerdp-deps-macos-arm64.tar.gz` |
+| Ubuntu x86_64 | `freerdp-deps-linux-x86_64.tar.gz` |
+| Windows MSYS2 UCRT64 | `freerdp-deps-windows-x86_64.tar.gz` |
+
 ## 미리 빌드된 SDK로 빠르게 빌드
 
 전체 라이브러리를 다시 빌드하지 않으려면 같은 릴리스의 플랫폼별 SDK를 내려받아 **새로운 빈 설치 경로**에 풉니다. 아래 예시는 Linux x86_64이며 macOS·Windows에서는 파일명을 해당 플랫폼으로 바꿉니다. Windows 명령은 MSYS2 UCRT64에서 실행합니다.
