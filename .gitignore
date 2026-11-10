@@ -39,3 +39,9 @@ CMakeFiles/
 *.swp
 *.swo
 *~
+
+# Cross-platform builds and release archives
+/.build/
+/.build-*/
+/dist/
+/scripts/__pycache__/
