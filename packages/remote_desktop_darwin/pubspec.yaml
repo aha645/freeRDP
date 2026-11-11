@@ -1,0 +1,21 @@
+name: remote_desktop_darwin
+description: remote_desktop의 macOS 구현. CVPixelBuffer 텍스처와 rdp_bridge(FreeRDP) 정적 라이브러리를 포함합니다. (iOS는 추후)
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.5.0
+  flutter: ">=3.29.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  remote_desktop_platform_interface:
+    path: ../remote_desktop_platform_interface
+
+flutter:
+  plugin:
+    implements: remote_desktop
+    platforms:
+      macos:
+        pluginClass: RemoteDesktopPlugin

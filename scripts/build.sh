@@ -3,11 +3,13 @@
 #   사용법: bash scripts/build.sh <타깃>
 #
 #   호스트(빌드하는 컴퓨터)        빌드 가능한 타깃
-#   macOS (iMac)                  macos-arm64, macos-x86_64, windows-x86_64, android-arm64
-#   Linux x86_64 (Windows의 WSL2) windows-x86_64, android-arm64, linux-x86_64, linux-arm64
+#   macOS (iMac)                  macos-arm64, macos-x86_64, windows-x86_64, android-arm64, android-x86_64
+#   Linux x86_64 (Windows의 WSL2) windows-x86_64, android-arm64, android-x86_64, linux-x86_64, linux-arm64
 #
 #   데스크톱 타깃 → dist/<타깃>/sdl-freerdp(.exe)        (SDL3 클라이언트 실행 파일)
-#   android-arm64 → dist/android-arm64/{include,lib}     (앱에 넣을 정적 라이브러리)
+#   macos-*       → 추가로 dist/<타깃>/{include,lib}     (Flutter plugin용 정적 라이브러리)
+#   android-arm64 → dist/android-arm64/{include,lib}     (앱에 넣을 정적 라이브러리, 실제 기기용)
+#   android-x86_64 → dist/android-x86_64/{include,lib}   (같은 형태, Intel 호스트의 에뮬레이터용)
 #
 # 소스·도구 다운로드 → 압축 해제 → 의존성 빌드 → FreeRDP 빌드 → dist/<타깃>/ 생성
 set -euo pipefail
@@ -25,12 +27,13 @@ case "$(uname -s)-$(uname -m)" in
   *) die "지원하는 호스트: macOS, Linux x86_64(Windows의 WSL2 포함)" ;;
 esac
 
-USAGE="사용법: bash scripts/build.sh <macos-arm64|macos-x86_64|windows-x86_64|android-arm64|linux-x86_64|linux-arm64>"
+USAGE="사용법: bash scripts/build.sh <macos-arm64|macos-x86_64|windows-x86_64|android-arm64|android-x86_64|linux-x86_64|linux-arm64>"
 case "$TARGET" in
   macos-arm64)    SSL_TARGET=darwin64-arm64-cc ;;
   macos-x86_64)   SSL_TARGET=darwin64-x86_64-cc ;;
   windows-x86_64) SSL_TARGET=mingw64 ;;
-  android-arm64)  SSL_TARGET=android-arm64 ;;
+  android-arm64)  SSL_TARGET=android-arm64;  ANDROID_ABI=arm64-v8a; ELF_FORMAT=elf64-littleaarch64 ;;
+  android-x86_64) SSL_TARGET=android-x86_64; ANDROID_ABI=x86_64;    ELF_FORMAT=elf64-x86-64 ;;
   linux-x86_64)   SSL_TARGET=linux-x86_64 ;;
   linux-arm64)    SSL_TARGET=linux-aarch64 ;;
   *) die "$USAGE" ;;
@@ -72,7 +75,9 @@ fi
 
 # ---------------------------------------------------------------- 1) 다운로드 + 압축 해제
 source "$ROOT/scripts/fetch.sh"
-fetch_all "$HOST" "$TARGET"
+FETCH_TARGET="$TARGET"
+[[ "$TARGET" == android-* ]] && FETCH_TARGET=android-arm64   # Android 타깃은 같은 NDK를 씀
+fetch_all "$HOST" "$FETCH_TARGET"
 
 # ---------------------------------------------------------------- 2) 도구
 if [[ "$HOST" == macos ]]; then
@@ -135,21 +140,24 @@ EOF
     FREERDP_EXTRA=(-DUSE_UNWIND=OFF)   # unwind 백트레이스는 dlfcn.h(POSIX) 필요
     ;;
 
-  android-arm64)
+  android-*)
     # tools/android 의 Android NDK (호스트별 배포판)
     NDK="$ROOT/tools/android/android-ndk-r27c"
     NDK_HOST=linux-x86_64; [[ "$HOST" == macos ]] && NDK_HOST=darwin-x86_64
     export ANDROID_NDK_ROOT="$NDK"
     export PATH="$NDK/toolchains/llvm/prebuilt/$NDK_HOST/bin:$PATH"
     CMAKE_ARGS+=(-DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake"
-      -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-$ANDROID_API)
+      -DANDROID_ABI=$ANDROID_ABI -DANDROID_PLATFORM=android-$ANDROID_API)
     SSL_ENV=(CFLAGS="-D__ANDROID_API__=$ANDROID_API")
     # 화면은 앱(Flutter 텍스처)이 그리므로 SDL 클라이언트 없이 라이브러리만 빌드
     # 소리·마이크: OpenSL ES, MD4/MD5/RC4: FreeRDP 내장 구현 (공식 Android 빌드와 동일)
     # LTO 끔: 앱 빌드 시 다른 NDK 버전으로도 링크되도록 일반 기계어(.o)로 보관
+    # 문자열 변환은 내장 구현: 기본값(JNI로 Java String 사용)은 JavaVM 등록이 필요하고
+    #   dart:ffi로 불리는 스레드에서 동작을 보장하기 어려움
     FREERDP_EXTRA=(-DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF
       -DWITH_CLIENT_SDL=OFF -DWITHOUT_FREERDP_3x_DEPRECATED=ON -DWITH_OPENSLES=ON
-      -DWITH_MEDIACODEC=OFF -DWITH_INTERNAL_RC4=ON -DWITH_INTERNAL_MD4=ON -DWITH_INTERNAL_MD5=ON)
+      -DWITH_MEDIACODEC=OFF -DWITH_INTERNAL_RC4=ON -DWITH_INTERNAL_MD4=ON -DWITH_INTERNAL_MD5=ON
+      -DWITH_UNICODE_BUILTIN=ON)
     ;;
 
   linux-*)
@@ -230,7 +238,7 @@ if [[ "$TARGET" == android-* ]]; then
   done
   for lib in "$OUT"/lib/*.a; do
     formats="$(llvm-objdump -f "$lib" | grep -o 'file format .*' | sort -u)"
-    [[ "$formats" == "file format elf64-littleaarch64" ]] || die "arm64 라이브러리가 아닙니다: $lib ($formats)"
+    [[ "$formats" == "file format $ELF_FORMAT" ]] || die "$TARGET 라이브러리가 아닙니다: $lib ($formats)"
   done
   echo
   echo "완료: $OUT/lib ($(ls "$OUT/lib" | wc -l | tr -d ' ')개 정적 라이브러리), $OUT/include"
@@ -238,6 +246,31 @@ if [[ "$TARGET" == android-* ]]; then
 fi
 
 cp "$WORK/install/bin/$EXE" "$OUT/"
+
+if [[ "$TARGET" == macos-* ]]; then
+  # Flutter plugin(packages/remote_desktop_darwin)용 정적 라이브러리
+  #   libfreerdp_all.a : FreeRDP·WinPR·채널·OpenSSL을 하나로 묶은 것
+  #   librdp_bridge.a  : native/rdp_bridge (dart:ffi가 부르는 C API)
+  mkdir -p "$OUT/lib"
+  cp -R "$WORK/install/include" "$OUT/"
+  cp -R "$DEPS/include/openssl" "$OUT/include/"
+  cp "$WORK/install/lib/libfreerdp3.a" "$OUT/lib/"
+  SDK_LIBS=("$WORK/install/lib/libfreerdp-client3.a" "$WORK/install/lib/libfreerdp3.a"
+    "$WORK/install/lib/libwinpr3.a" "$DEPS/lib/libssl.a" "$DEPS/lib/libcrypto.a")
+  while IFS= read -r lib; do SDK_LIBS+=("$lib"); done \
+    < <(find "$WORK/FreeRDP/channels" -name '*-common.a')
+  libtool -static -o "$OUT/lib/libfreerdp_all.a" "${SDK_LIBS[@]}"
+  cmake_build rdp_bridge "$ROOT/native/rdp_bridge" "$WORK/bridge-install" -DRDPB_FREERDP_DIR="$OUT"
+  cp "$WORK/rdp_bridge/librdp_bridge.a" "$OUT/lib/"
+
+  # plugin 폴더에는 지금까지 빌드한 CPU 종류를 모두 합쳐 넣음 (Intel만, Apple Silicon만, 또는 둘 다)
+  PLUGIN_LIBS="$ROOT/packages/remote_desktop_darwin/macos/Libraries"
+  mkdir -p "$PLUGIN_LIBS"
+  for name in rdp_bridge freerdp_all; do
+    lipo -create "$ROOT"/dist/macos-*/lib/lib$name.a -output "$PLUGIN_LIBS/lib$name.a"
+  done
+  echo "plugin용 라이브러리: $PLUGIN_LIBS ($(lipo -archs "$PLUGIN_LIBS/librdp_bridge.a"))"
+fi
 [[ "$TARGET" == windows-* ]] && cp "$ROOT/scripts/connect.bat" "$OUT/"   # Windows용 접속 스크립트
 
 # 시스템 외 동적 라이브러리에 의존하지 않는지 확인
