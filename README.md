@@ -18,11 +18,12 @@ bash scripts/build.sh <타깃>
 | `macos-arm64` | `dist/macos-arm64/sdl-freerdp` | ✅ 빌드 확인 | ❌ |
 | `windows-x86_64` | `dist/windows-x86_64/sdl-freerdp.exe`, `connect.bat` | ✅ 빌드 확인 | 지원 (미검증) |
 | `android-arm64` | `dist/android-arm64/{include,lib}` 앱용 정적 라이브러리 | ✅ 빌드·링크 확인 | 지원 (미검증) |
+| `android-x86_64` | `dist/android-x86_64/{include,lib}` 에뮬레이터용 | 지원 (미검증) | 지원 (미검증) |
 | `linux-x86_64` | `dist/linux-x86_64/sdl-freerdp` | ❌ | 지원 (미검증) |
 | `linux-arm64` | `dist/linux-arm64/sdl-freerdp` | ❌ | 지원 (미검증, 교차 빌드) |
 
 - **데스크톱 타깃:** SDL3 클라이언트 실행 파일 하나를 만듭니다. 다른 라이브러리를 정적으로 포함하므로 이 파일만 복사하면 대상 컴퓨터에서 실행됩니다(Linux는 X11·PulseAudio 같은 데스크톱 시스템 라이브러리 사용).
-- **android-arm64:** 실행 파일이 아니라 Flutter 앱(plugin)에 넣을 FreeRDP·OpenSSL 헤더와 정적 라이브러리를 만듭니다. 설계는 [docs/plugin-design.md](docs/plugin-design.md)를 참고하세요.
+- **android-arm64, android-x86_64:** 실행 파일이 아니라 Flutter 앱(plugin)에 넣을 FreeRDP·OpenSSL 헤더와 정적 라이브러리를 만듭니다. 설계는 [docs/plugin-design.md](docs/plugin-design.md), plugin과 앱 빌드 방법은 [packages/README.md](packages/README.md)를 참고하세요.
 - **"미검증":** Linux 호스트용 스크립트는 작성했지만 WSL2에서 아직 실제로 빌드해 보지 않았다는 뜻입니다.
 
 ## 폴더 구조
@@ -36,6 +37,8 @@ rdp/
 │   └── connect.bat     # 접속(Windows): 빌드 시 dist/windows-x86_64/에 함께 복사
 ├── docs/
 │   └── plugin-design.md  # Flutter FFI plugin 설계
+├── native/rdp_bridge/  # Flutter plugin용 C bridge (FreeRDP 위의 작은 API)
+├── packages/           # Flutter plugin (Android 우선)과 예제 앱
 ├── src/                # (자동 생성) 소스 압축 파일과 압축을 푼 소스
 │   ├── openssl-3.5.0/   SDL3-3.2.28/   freetype-2.13.3/
 │   ├── SDL3_ttf-3.2.2/  freerdp-3.24.2/

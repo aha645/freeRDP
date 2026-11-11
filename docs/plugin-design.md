@@ -46,12 +46,13 @@ typedef struct rdpb_session rdpb_session;               /* 불투명 핸들 */
 typedef enum { RDPB_CERT_ASK, RDPB_CERT_IGNORE, RDPB_CERT_TOFU } rdpb_cert_policy;
 
 typedef struct {
-    const char* host; int port;
+    const char* host; int32_t port;
     const char* username; const char* domain;   /* 비밀번호는 auth 이벤트로 받음 */
-    int width, height;
-    int dynamic_resolution;                       /* disp 채널 */
-    int clipboard, audio_playback, microphone;    /* cliprdr / rdpsnd / audin */
-    rdpb_cert_policy cert_policy;
+    int32_t width, height;
+    int32_t dynamic_resolution;                   /* disp 채널 */
+    int32_t clipboard, audio_playback, microphone; /* cliprdr / rdpsnd / audin */
+    int32_t cert_policy;
+    const char* config_dir;                       /* 알려진 인증서 저장 폴더 (NULL = 기본) */
 } rdpb_config;
 
 typedef enum {
@@ -59,44 +60,56 @@ typedef enum {
     RDPB_EV_AUTH_REQUEST,   /* 비밀번호 필요 → rdpb_answer_auth() */
     RDPB_EV_CERT_VERIFY,    /* 인증서 확인 필요 → rdpb_answer_cert() */
     RDPB_EV_DESKTOP_SIZE,   /* 원격 해상도 변경 */
-    RDPB_EV_CURSOR,         /* 커서 모양 변경 (BGRA + hotspot) */
+    RDPB_EV_CURSOR,         /* (예약) 커서 모양 변경 — 아직 보내지 않음 */
     RDPB_EV_CLIPBOARD_TEXT  /* 원격 클립보드 텍스트 (UTF-8) */
 } rdpb_event_type;
 
-typedef struct { rdpb_event_type type; int code; int a, b; const char* text;
-                 const uint8_t* data; int data_len; } rdpb_event;
+typedef struct { int32_t type; int32_t code; int32_t a, b; const char* text;
+                 const uint8_t* data; int32_t data_len; } rdpb_event;
 
-typedef void (*rdpb_event_cb)(void* user, const rdpb_event* ev);   /* 임의 스레드에서 호출 */
+/* 임의 스레드에서 호출. 이벤트는 힙에 있으며 받은 쪽이 rdpb_event_free()로 해제 */
+typedef void (*rdpb_event_cb)(void* user, rdpb_event* ev);
 
 /* 프레임 싱크: 플랫폼 plugin이 구현 (4장) */
-typedef struct { int x, y, w, h; } rdpb_rect;
+typedef struct { int32_t x, y, w, h; } rdpb_rect;
 typedef struct rdpb_frame_sink {
-    int  (*begin)(void* user, int width, int height, uint8_t** pixels, int* stride); /* 버퍼 잠금 */
-    void (*end)(void* user, const rdpb_rect* dirty, int count);                    /* 해제 + 알림 */
+    /* 버퍼 잠금. dirty는 입출력: 싱크가 영역을 넓혀 돌려줄 수 있음(새 버퍼 등) */
+    int32_t (*begin)(void* user, int32_t width, int32_t height, rdpb_rect* dirty,
+                     uint8_t** pixels, int32_t* stride);
+    void (*end)(void* user);                                  /* 해제 + 알림 */
     void* user;
 } rdpb_frame_sink;
 
 rdpb_session* rdpb_create(const rdpb_config* cfg, rdpb_event_cb cb, void* user);
-int  rdpb_attach_sink(rdpb_session* s, const rdpb_frame_sink* sink);  /* 포인터를 int64로 전달 가능 */
-int  rdpb_connect(rdpb_session* s);            /* 비동기: 자체 스레드에서 접속 */
+int32_t rdpb_attach_sink(rdpb_session* s, const rdpb_frame_sink* sink);  /* NULL = 떼기 */
+int32_t rdpb_connect(rdpb_session* s);         /* 비동기: 자체 스레드에서 접속 */
 void rdpb_disconnect(rdpb_session* s);
 void rdpb_destroy(rdpb_session* s);
+void rdpb_event_free(rdpb_event* ev);
 
-void rdpb_answer_auth(rdpb_session* s, int ok, const char* password);
-void rdpb_answer_cert(rdpb_session* s, int accept, int remember);
+void rdpb_answer_auth(rdpb_session* s, int32_t ok, const char* password);
+void rdpb_answer_cert(rdpb_session* s, int32_t accept, int32_t remember);
 
-void rdpb_send_key(rdpb_session* s, uint16_t scancode, int extended, int down);
-void rdpb_send_unicode(rdpb_session* s, uint16_t codepoint, int down);   /* 소프트 키보드용 */
-void rdpb_send_mouse(rdpb_session* s, uint16_t flags, int x, int y);     /* 버튼·이동 */
-void rdpb_send_wheel(rdpb_session* s, int delta, int horizontal);
-void rdpb_resize(rdpb_session* s, int width, int height);                /* disp 채널 */
+void rdpb_send_key(rdpb_session* s, uint16_t scancode, int32_t extended, int32_t down);
+void rdpb_send_unicode(rdpb_session* s, uint16_t codeunit, int32_t down);  /* 소프트 키보드용 */
+void rdpb_send_mouse(rdpb_session* s, uint16_t flags, int32_t x, int32_t y); /* 버튼·이동 */
+void rdpb_send_wheel(rdpb_session* s, int32_t delta, int32_t horizontal);
+void rdpb_resize(rdpb_session* s, int32_t width, int32_t height);          /* disp 채널 */
 void rdpb_clipboard_set_text(rdpb_session* s, const char* utf8);
+void rdpb_request_redraw(rdpb_session* s);     /* 화면 전체를 싱크에 다시 그림 */
 ```
 
 스레드 규칙
 - FreeRDP는 세션마다 자체 스레드에서 돕니다. `rdpb_event_cb`와 프레임 싱크는 **그 스레드에서** 호출됩니다.
 - 인증·인증서 확인은 **블로킹하지 않는 요청/응답 방식**으로 처리합니다. FreeRDP 콜백 안에서 조건 변수로 기다리고, Dart가 `rdpb_answer_*`를 호출하면 깨어납니다. 앞서 `/cert:ignore` 없이 접속하면 보이지 않는 인증서 질문 때문에 멈췄습니다. 그 문제를 UI에서 질문을 띄우는 방식으로 해결합니다.
-- 입력 함수(`rdpb_send_*`)는 어느 스레드에서 불러도 됩니다. 내부에서 FreeRDP 입력 큐에 넣습니다.
+- 입력 함수(`rdpb_send_*`)는 어느 스레드에서 불러도 됩니다. bridge의 명령 큐에 넣고 세션 스레드가 꺼내 FreeRDP로 보냅니다.
+
+초안에서 바뀐 점 (P0 구현 중 확인)
+- **이벤트는 힙에 두고 `rdpb_event_free`로 해제합니다.** `NativeCallable.listener`는 네이티브 콜백이 끝난 뒤에 Dart에서 실행되므로, 콜백 안에서만 유효한 포인터를 넘기면 Dart가 읽을 때는 이미 사라져 있습니다.
+- **싱크 `begin`이 무효 영역을 입출력으로 받습니다.** Android `ANativeWindow_lock`은 잠글 때 바뀔 영역을 받아 나머지를 이전 프레임에서 복사해 주고, 복사할 수 없으면(첫 프레임, 크기 변경) 영역을 전체로 넓혀 돌려줍니다. 그래서 영역을 `end`가 아니라 `begin`에서 주고받아야 합니다.
+- **`rdpb_request_redraw` 추가.** 텍스처의 Surface가 새로 만들어지면(백그라운드 복귀, 크기 변경) 원격 화면이 바뀌지 않아도 전체를 다시 그려야 합니다.
+- **`config_dir` 추가.** FreeRDP는 알려진 인증서를 `$HOME/.config/freerdp`에 저장하는데 Android에는 `HOME`이 없습니다. Android plugin이 시작할 때 `HOME`을 앱 전용 폴더로 설정하고, 다른 플랫폼은 이 필드로 지정할 수 있습니다.
+- **Android 빌드는 `WITH_UNICODE_BUILTIN=ON`.** FreeRDP 기본값은 문자열 변환을 JNI(Java String)로 하는데, JavaVM 등록(`JNI_OnLoad`)이 필요하고 변환마다 스레드를 붙였다 뗍니다. FFI로 쓰는 구조에는 맞지 않아 내장 변환으로 바꿨습니다.
 
 FreeRDP와의 연결 지점(구현 메모)
 | bridge 기능 | FreeRDP 쪽 |
@@ -118,7 +131,7 @@ FreeRDP와의 연결 지점(구현 메모)
 packages/
 ├── remote_desktop/                     # 앱이 쓰는 API: RemoteSession, RemoteView 위젯
 ├── remote_desktop_platform_interface/  # 플랫폼 공통 인터페이스
-├── remote_desktop_ffi/                 # rdp_bridge FFI 바인딩 (ffigen 생성) — 웹 제외 공통
+├── remote_desktop_ffi/                 # rdp_bridge FFI 바인딩 (직접 작성) — 웹 제외 공통
 ├── remote_desktop_android/             # Kotlin: SurfaceProducer + JNI 싱크, rdp_bridge.so 포함
 ├── remote_desktop_darwin/              # Swift: iOS·macOS 공용 FlutterTexture 싱크
 ├── remote_desktop_windows/             # C++: 픽셀 버퍼 텍스처 싱크
@@ -136,7 +149,9 @@ await session.connect();                              // rdpb_connect
 // build(): Texture(textureId: view.textureId) + 입력 처리 위젯
 ```
 
-- 플랫폼 plugin의 MethodChannel 호출은 `createTexture`와 `disposeTexture` 두 개뿐입니다. 결과로 `textureId`와 `sinkPtr`(네이티브 `rdpb_frame_sink` 구조체 주소)을 돌려줍니다.
+- 플랫폼 plugin의 MethodChannel(`remote_desktop/texture`) 호출은 `createTexture`, `resizeTexture`, `disposeTexture` 세 개입니다. `createTexture`는 `textureId`와 `sinkPtr`(네이티브 `rdpb_frame_sink` 구조체 주소)을 돌려줍니다. 반대 방향으로는 Surface가 새로 만들어졌을 때 `surfaceAvailable(textureId)`를 보내고, Dart가 `rdpb_request_redraw`를 부릅니다.
+- `resizeTexture`가 필요한 이유: Android `SurfaceProducer`는 `setSize`를 부르면 Surface를 새로 만들기 때문에, 원격 해상도가 바뀔 때 Kotlin에서 새 Surface를 싱크에 다시 넘겨야 합니다.
+- 해제 순서: `rdpb_attach_sink(session, NULL)`(Dart) → `disposeTexture`(plugin). 순서가 바뀌면 세션 스레드가 해제된 싱크에 그립니다.
 - 이후 픽셀 경로는 bridge → 싱크 → 엔진입니다. Dart는 관여하지 않습니다.
 - 이벤트 콜백은 `NativeCallable<rdpb_event_cb>.listener`로 만듭니다. FreeRDP 스레드에서 호출되어도 Dart isolate로 안전하게 전달됩니다.
 
@@ -146,7 +161,7 @@ await session.connect();                              // rdpb_connect
 
 | 플랫폼 | Flutter 텍스처 | 싱크 `begin` / `end` 구현 | plugin 언어 |
 | --- | --- | --- | --- |
-| Android | `TextureRegistry.SurfaceProducer` → `Surface` | JNI로 `ANativeWindow_fromSurface`. `begin` = `ANativeWindow_setBuffersGeometry` + `ANativeWindow_lock`, `end` = `ANativeWindow_unlockAndPost`(알림 포함) | Kotlin + C(JNI, bridge .so에 포함) |
+| Android | `TextureRegistry.SurfaceProducer` → `Surface` | JNI로 `ANativeWindow_fromSurface`. `begin` = `ANativeWindow_setBuffersGeometry` + `ANativeWindow_lock`(무효 영역 전달), `end` = `ANativeWindow_unlockAndPost`(알림 포함) | Kotlin + C(JNI, bridge .so에 포함) |
 | iOS·macOS | `FlutterTexture` (`copyPixelBuffer`) | `CVPixelBufferPool`(IOSurface 지원)에서 버퍼 2개를 교대로 씁니다. `begin` = `CVPixelBufferLockBaseAddress`, `end` = unlock + `textureFrameAvailable` | Swift + C 함수 포인터 |
 | Windows | `FlutterDesktopPixelBufferTextureConfig` | 내부 BGRA 버퍼 2개를 교대로 씁니다. `end` = `MarkTextureFrameAvailable`, 엔진이 콜백으로 최신 버퍼를 가져갑니다. 성능이 부족하면 D3D11 공유 텍스처(`FlutterDesktopGpuSurfaceDescriptor`)로 바꿉니다 | C++ |
 | Linux | `FlPixelBufferTexture` 서브클래스 | 내부 버퍼 2개를 교대로 쓰고 `fl_texture_registrar_mark_texture_frame_available`로 알립니다 | C (GTK) |
@@ -172,7 +187,8 @@ await session.connect();                              // rdpb_connect
 
 | 타깃 | 현재 `build.sh` 산출물 | plugin용으로 필요한 형태 | 상태 |
 | --- | --- | --- | --- |
-| android-arm64 | `dist/android-arm64/{include,lib}` 정적 라이브러리 7개 | 그대로 사용. plugin의 CMake가 `rdp_bridge` + 정적 라이브러리를 `librdp_bridge.so` 하나로 링크 | ✅ 빌드·링크 확인 (iMac) |
+| android-arm64 | `dist/android-arm64/{include,lib}` 정적 라이브러리 7개 | 그대로 사용. plugin의 CMake가 `rdp_bridge` + 정적 라이브러리를 `librdp_bridge.so` 하나로 링크 | ✅ FreeRDP 빌드·링크 확인 (iMac), 🔧 plugin과 함께 APK 빌드는 미검증 |
+| android-x86_64 | `dist/android-x86_64/{include,lib}` (에뮬레이터용, Intel 호스트) | 위와 같음 | 🔧 타깃 추가, 실빌드 미검증 |
 | windows-x86_64 | `sdl-freerdp.exe` | **`rdp_bridge.dll`** (llvm-mingw, C 함수만 내보냄). Flutter C++ plugin(MSVC)은 이 DLL을 링크하지 않고 `sinkPtr`만 주고받으므로 컴파일러가 달라도 됩니다 | 🔧 bridge 추가 |
 | macos-* | `sdl-freerdp` | 정적 라이브러리 → `rdp_bridge` 포함 dylib/xcframework | 🔧 SDK 출력 추가 |
 | ios-arm64 / 시뮬레이터 | 없음 | 정적 라이브러리 xcframework | 🔧 타깃 추가 (Xcode 필요) |
@@ -266,7 +282,7 @@ FreeRDP 빌드 설정(`build/<타깃>/FreeRDP/CMakeCache.txt`)에서 확인한 �
 
 | 단계 | 내용 | 완료 기준 |
 | --- | --- | --- |
-| P0 | `rdp_bridge` C API + Android plugin | Android에서 접속, 화면 표시, 키보드·마우스 동작 |
+| P0 | `rdp_bridge` C API + Android plugin | Android에서 접속, 화면 표시, 키보드·마우스 동작. **코드 작성됨**(`native/rdp_bridge`, `packages/`). bridge와 Dart FFI는 Linux에서 FreeRDP 예제 서버로 확인, Android 기기 실행은 미검증 |
 | P1 | 인증·인증서 UI, 해상도 변경, 클립보드 텍스트, 소리 재생 | gnome-remote-desktop에서 일상 사용 가능 |
 | P2 | Windows(`rdp_bridge.dll`) · macOS plugin | 데스크톱 2종 동작 |
 | P3 | iOS (Xcode, AudioQueue 백엔드, 백그라운드 처리) | iPhone 동작 |
@@ -282,4 +298,8 @@ FreeRDP 빌드 설정(`build/<타깃>/FreeRDP/CMakeCache.txt`)에서 확인한 �
 3. WSL2에서 `linux-*`, `windows-x86_64`, `android-arm64` 실빌드 검증
 4. Windows: mingw로 빌드한 `rdp_bridge.dll`과 MSVC Flutter 앱의 조합 검증
 5. iOS: 백그라운드 전환 시 연결 유지 정책
-6. 라이선스: FreeRDP·OpenSSL은 Apache-2.0이라 정적 링크와 상용 배포가 가능합니다(고지 필요). GPL 라이브러리는 사용하지 않습니다.
+6. Android: `SurfaceProducer`(ImageReader)의 Surface에 `ANativeWindow_lock`으로 CPU에서 쓰는 방식이 Impeller(Vulkan) 기기에서 문제없는지 실제 기기 확인
+7. gnome-remote-desktop은 그래픽 파이프라인(rdpgfx)으로 화면을 보냅니다. bridge는 이를 켜 두었지만 예제 서버는 이 경로를 쓰지 않아 실제 서버 확인이 필요합니다. 해상도 변경(disp)과 클립보드(cliprdr)도 같습니다.
+8. 커서: 원격 커서 모양(`RDPB_EV_CURSOR`)은 아직 전달하지 않습니다. 터치에서는 필요 없고, 하드웨어 마우스를 쓰면 Android 시스템 커서가 보입니다.
+9. `scripts/build.sh`의 `linux-*` 타깃은 WinPR이 ICU를 요구해 `libicu-dev` 없이는 실패합니다. `-DWITH_UNICODE_BUILTIN=ON`을 주면 됩니다(Android에는 적용함).
+10. 라이선스: FreeRDP·OpenSSL은 Apache-2.0이라 정적 링크와 상용 배포가 가능합니다(고지 필요). GPL 라이브러리는 사용하지 않습니다.
