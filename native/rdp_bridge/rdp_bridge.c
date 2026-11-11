@@ -61,7 +61,8 @@ void rdpb_event_free(rdpb_event* ev)
 
 /* ------------------------------------------------------------------ 화면 */
 
-/* gdi 버퍼의 지정 영역을 싱크에 복사한다. 세션 스레드에서만 호출. */
+/* gdi 버퍼의 지정 영역을 싱크에 복사한다. FreeRDP의 update 잠금을 잡은 상태에서 호출한다
+ * (EndPaint 콜백 안이거나, 직접 rdp_update_lock을 잡은 경우). */
 static void present(rdpb_session* s, int32_t x, int32_t y, int32_t w, int32_t h)
 {
 	rdpGdi* gdi = s->context->gdi;
@@ -147,6 +148,15 @@ static BOOL on_end_paint(rdpContext* context)
 	return TRUE;
 }
 
+static void set_desktop_size(rdpb_session* s, int32_t w, int32_t h)
+{
+	EnterCriticalSection(&s->disp_lock);
+	s->desk_w = w;
+	s->desk_h = h;
+	LeaveCriticalSection(&s->disp_lock);
+}
+
+/* 세션 스레드 또는 동적 채널 스레드(그래픽 파이프라인)에서 호출된다 */
 static BOOL on_desktop_resize(rdpContext* context)
 {
 	rdpb_session* s = session_of(context);
@@ -155,6 +165,7 @@ static BOOL on_desktop_resize(rdpContext* context)
 	const UINT32 h = freerdp_settings_get_uint32(settings, FreeRDP_DesktopHeight);
 	if (!gdi_resize(context->gdi, w, h))
 		return FALSE;
+	set_desktop_size(s, (int32_t)w, (int32_t)h);
 	rdpb_emit(s, RDPB_EV_DESKTOP_SIZE, 0, (int32_t)w, (int32_t)h, NULL);
 	return TRUE;
 }
@@ -288,6 +299,7 @@ void rdpb_answer_cert(rdpb_session* s, int32_t accept, int32_t remember)
 }
 
 /* ------------------------------------------------------------------ 채널 */
+/* 동적 채널(disp, rdpgfx)의 콜백은 FreeRDP의 동적 채널 스레드에서 호출된다. */
 
 static UINT on_disp_caps(DispClientContext* disp, UINT32 max_monitors, UINT32 factor_a,
                          UINT32 factor_b);
@@ -297,9 +309,12 @@ static void on_channel_connected(void* context, const ChannelConnectedEventArgs*
 	rdpb_session* s = session_of((rdpContext*)context);
 	if (strcmp(e->name, DISP_DVC_CHANNEL_NAME) == 0)
 	{
-		s->disp = (DispClientContext*)e->pInterface;
-		s->disp->custom = s;
-		s->disp->DisplayControlCaps = on_disp_caps;
+		DispClientContext* disp = (DispClientContext*)e->pInterface;
+		disp->custom = s;
+		disp->DisplayControlCaps = on_disp_caps;
+		EnterCriticalSection(&s->disp_lock);
+		s->disp = disp;
+		LeaveCriticalSection(&s->disp_lock);
 	}
 	else if (strcmp(e->name, CLIPRDR_SVC_CHANNEL_NAME) == 0)
 		rdpb_clipboard_attach(s, (CliprdrClientContext*)e->pInterface);
@@ -312,8 +327,10 @@ static void on_channel_disconnected(void* context, const ChannelDisconnectedEven
 	rdpb_session* s = session_of((rdpContext*)context);
 	if (strcmp(e->name, DISP_DVC_CHANNEL_NAME) == 0)
 	{
+		EnterCriticalSection(&s->disp_lock);
 		s->disp = NULL;
 		s->disp_ready = FALSE;
+		LeaveCriticalSection(&s->disp_lock);
 	}
 	else if (strcmp(e->name, CLIPRDR_SVC_CHANNEL_NAME) == 0)
 		rdpb_clipboard_detach(s);
@@ -346,6 +363,7 @@ static BOOL on_post_connect(freerdp* instance)
 	context->update->DesktopResize = on_desktop_resize;
 
 	s->active = TRUE;
+	set_desktop_size(s, context->gdi->width, context->gdi->height);
 	rdpb_emit(s, RDPB_EV_DESKTOP_SIZE, 0, context->gdi->width, context->gdi->height, NULL);
 	return TRUE;
 }
@@ -411,34 +429,44 @@ static UINT16 clamp_u16(int32_t v)
 	return (UINT16)(v < 0 ? 0 : (v > 0xFFFF ? 0xFFFF : v));
 }
 
-/* 요청받은 해상도를 서버에 보낸다. 채널이 준비되기 전이면 준비된 뒤(on_disp_caps)에 보낸다. */
-static void send_layout(rdpb_session* s)
+/* 요청받은 해상도를 서버에 보낸다. 채널이 준비되기 전이면 준비된 뒤(on_disp_caps)에 보낸다.
+ * w, h가 0보다 크면 요청 크기를 먼저 바꾼다. 세션 스레드와 동적 채널 스레드 양쪽에서 호출된다. */
+static void send_layout(rdpb_session* s, int32_t new_w, int32_t new_h, BOOL ready)
 {
-	if (!s->disp || !s->disp_ready || s->want_w <= 0 || s->want_h <= 0)
-		return;
+	EnterCriticalSection(&s->disp_lock);
+	if (new_w > 0 && new_h > 0)
+	{
+		s->want_w = new_w;
+		s->want_h = new_h;
+	}
+	if (ready)
+		s->disp_ready = TRUE;
 
-	int32_t w = s->want_w & ~1; /* 너비는 짝수여야 함 */
-	int32_t h = s->want_h;
-	if (w < DISPLAY_CONTROL_MIN_MONITOR_WIDTH)
-		w = DISPLAY_CONTROL_MIN_MONITOR_WIDTH;
-	if (w > DISPLAY_CONTROL_MAX_MONITOR_WIDTH)
-		w = DISPLAY_CONTROL_MAX_MONITOR_WIDTH;
-	if (h < DISPLAY_CONTROL_MIN_MONITOR_HEIGHT)
-		h = DISPLAY_CONTROL_MIN_MONITOR_HEIGHT;
-	if (h > DISPLAY_CONTROL_MAX_MONITOR_HEIGHT)
-		h = DISPLAY_CONTROL_MAX_MONITOR_HEIGHT;
+	if (s->disp && s->disp_ready && s->want_w > 0 && s->want_h > 0)
+	{
+		int32_t w = s->want_w & ~1; /* 너비는 짝수여야 함 */
+		int32_t h = s->want_h;
+		if (w < DISPLAY_CONTROL_MIN_MONITOR_WIDTH)
+			w = DISPLAY_CONTROL_MIN_MONITOR_WIDTH;
+		if (w > DISPLAY_CONTROL_MAX_MONITOR_WIDTH)
+			w = DISPLAY_CONTROL_MAX_MONITOR_WIDTH;
+		if (h < DISPLAY_CONTROL_MIN_MONITOR_HEIGHT)
+			h = DISPLAY_CONTROL_MIN_MONITOR_HEIGHT;
+		if (h > DISPLAY_CONTROL_MAX_MONITOR_HEIGHT)
+			h = DISPLAY_CONTROL_MAX_MONITOR_HEIGHT;
 
-	rdpGdi* gdi = s->context->gdi;
-	if (gdi && gdi->width == w && gdi->height == h)
-		return; /* 이미 그 크기 */
-
-	DISPLAY_CONTROL_MONITOR_LAYOUT layout = { 0 };
-	layout.Flags = DISPLAY_CONTROL_MONITOR_PRIMARY;
-	layout.Width = (UINT32)w;
-	layout.Height = (UINT32)h;
-	layout.DesktopScaleFactor = 100;
-	layout.DeviceScaleFactor = 100;
-	(void)s->disp->SendMonitorLayout(s->disp, 1, &layout);
+		if (w != s->desk_w || h != s->desk_h) /* 이미 그 크기면 보내지 않음 */
+		{
+			DISPLAY_CONTROL_MONITOR_LAYOUT layout = { 0 };
+			layout.Flags = DISPLAY_CONTROL_MONITOR_PRIMARY;
+			layout.Width = (UINT32)w;
+			layout.Height = (UINT32)h;
+			layout.DesktopScaleFactor = 100;
+			layout.DeviceScaleFactor = 100;
+			(void)s->disp->SendMonitorLayout(s->disp, 1, &layout);
+		}
+	}
+	LeaveCriticalSection(&s->disp_lock);
 }
 
 static UINT on_disp_caps(DispClientContext* disp, UINT32 max_monitors, UINT32 factor_a,
@@ -448,8 +476,7 @@ static UINT on_disp_caps(DispClientContext* disp, UINT32 max_monitors, UINT32 fa
 	WINPR_UNUSED(max_monitors);
 	WINPR_UNUSED(factor_a);
 	WINPR_UNUSED(factor_b);
-	s->disp_ready = TRUE;
-	send_layout(s);
+	send_layout(s, 0, 0, TRUE);
 	return CHANNEL_RC_OK;
 }
 
@@ -494,16 +521,18 @@ static void run_cmd(rdpb_session* s, const rdpb_cmd* cmd)
 			break;
 		}
 		case RDPB_CMD_RESIZE:
-			s->want_w = cmd->a;
-			s->want_h = cmd->b;
-			send_layout(s);
+			send_layout(s, cmd->a, cmd->b, FALSE);
 			break;
 		case RDPB_CMD_CLIPBOARD:
 			rdpb_clipboard_announce(s);
 			break;
 		case RDPB_CMD_REDRAW:
+			/* 그래픽 파이프라인은 동적 채널 스레드에서 화면 버퍼를 쓰고 크기도 바꾼다.
+			 * FreeRDP의 update 잠금을 잡아 그 사이에 버퍼가 바뀌지 않게 한다. */
+			rdp_update_lock(context->update);
 			if (context->gdi)
 				present(s, 0, 0, context->gdi->width, context->gdi->height);
+			rdp_update_unlock(context->update);
 			break;
 	}
 }
@@ -642,6 +671,7 @@ rdpb_session* rdpb_create(const rdpb_config* cfg, rdpb_event_cb cb, void* user)
 	s->cert_policy = cfg->cert_policy;
 	InitializeCriticalSection(&s->lock);
 	InitializeCriticalSection(&s->sink_lock);
+	InitializeCriticalSection(&s->disp_lock);
 	s->stop_event = CreateEvent(NULL, TRUE, FALSE, NULL);
 	s->cmd_event = CreateEvent(NULL, TRUE, FALSE, NULL);
 	s->answer_event = CreateEvent(NULL, TRUE, FALSE, NULL);
@@ -721,6 +751,7 @@ void rdpb_destroy(rdpb_session* s)
 		(void)CloseHandle(s->answer_event);
 	DeleteCriticalSection(&s->lock);
 	DeleteCriticalSection(&s->sink_lock);
+	DeleteCriticalSection(&s->disp_lock);
 	free(s->cmds);
 	free(s->answer_password);
 	free(s->clip_text);

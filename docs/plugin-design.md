@@ -100,7 +100,8 @@ void rdpb_request_redraw(rdpb_session* s);     /* 화면 전체를 싱크에 다
 ```
 
 스레드 규칙
-- FreeRDP는 세션마다 자체 스레드에서 돕니다. `rdpb_event_cb`와 프레임 싱크는 **그 스레드에서** 호출됩니다.
+- FreeRDP는 세션마다 자체 스레드에서 돕니다. 여기에 **동적 채널 스레드**가 하나 더 있어, 그래픽 파이프라인(rdpgfx)의 화면 갱신과 해상도 변경(disp) 콜백은 그 스레드에서 옵니다. 따라서 `rdpb_event_cb`와 프레임 싱크는 두 스레드 중 어느 쪽에서도 호출될 수 있습니다(동시에 호출되지는 않습니다).
+- 여러 스레드가 함께 쓰는 자원과 잠금: 명령 큐·응답·클립보드 텍스트(`lock`), 싱크 포인터와 싱크 사용 구간(`sink_lock`), 해상도 변경 상태(`disp_lock`), 화면 버퍼(FreeRDP의 update 잠금), Android Surface(싱크 안의 mutex). 잠그는 순서는 항상 update 잠금 → `sink_lock` → Surface mutex입니다.
 - 인증·인증서 확인은 **블로킹하지 않는 요청/응답 방식**으로 처리합니다. FreeRDP 콜백 안에서 조건 변수로 기다리고, Dart가 `rdpb_answer_*`를 호출하면 깨어납니다. 앞서 `/cert:ignore` 없이 접속하면 보이지 않는 인증서 질문 때문에 멈췄습니다. 그 문제를 UI에서 질문을 띄우는 방식으로 해결합니다.
 - 입력 함수(`rdpb_send_*`)는 어느 스레드에서 불러도 됩니다. bridge의 명령 큐에 넣고 세션 스레드가 꺼내 FreeRDP로 보냅니다.
 

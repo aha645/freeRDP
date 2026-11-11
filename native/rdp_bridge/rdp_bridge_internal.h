@@ -51,12 +51,16 @@ struct rdpb_session
 	CRITICAL_SECTION sink_lock;
 	const rdpb_frame_sink* sink;
 
+	/* 해상도 변경(disp): 세션 스레드와 동적 채널 스레드가 함께 쓴다 */
+	CRITICAL_SECTION disp_lock;
+	DispClientContext* disp;
+	BOOL disp_ready;        /* 서버가 해상도 변경 기능(caps)을 알린 뒤 */
+	int32_t want_w, want_h; /* 요청받은 해상도. 0이면 없음 */
+	int32_t desk_w, desk_h; /* 현재 원격 화면 크기 */
+
 	/* 세션 스레드 전용 */
 	BOOL active; /* PostConnect ~ PostDisconnect */
 	int32_t mouse_x, mouse_y;
-	DispClientContext* disp;
-	BOOL disp_ready;          /* 서버가 해상도 변경 기능(caps)을 알린 뒤 */
-	int32_t want_w, want_h;   /* 요청받은 해상도. 0이면 없음 */
 	CliprdrClientContext* cliprdr;
 	BOOL clip_ready; /* 서버가 MonitorReady를 보낸 뒤 */
 };
