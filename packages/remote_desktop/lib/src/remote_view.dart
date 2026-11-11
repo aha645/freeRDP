@@ -286,8 +286,9 @@ class RemoteViewState extends State<RemoteView> {
     if (event is! PointerScrollEvent) return;
     final delta = event.scrollDelta;
     if (delta.dy != 0) _session.sendWheel(delta.dy > 0 ? -120 : 120);
-    if (delta.dx != 0)
+    if (delta.dx != 0) {
       _session.sendWheel(delta.dx > 0 ? 120 : -120, horizontal: true);
+    }
   }
 
   double _averageTouchY() {
@@ -333,9 +334,8 @@ class RemoteViewState extends State<RemoteView> {
       builder: (context, _) => LayoutBuilder(
         builder: (context, constraints) {
           final desktop = widget.controller.desktopSize;
-          final box = constraints.biggest.isFinite
-              ? constraints.biggest
-              : desktop;
+          final box =
+              constraints.biggest.isFinite ? constraints.biggest : desktop;
           _scheduleResize(box);
           _scale = math.min(
             box.width / desktop.width,

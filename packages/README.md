@@ -1,6 +1,6 @@
-# Flutter 원격 데스크톱 plugin (Android 우선)
+# Flutter 원격 데스크톱 plugin (Android, macOS)
 
-설계는 [docs/plugin-design.md](../docs/plugin-design.md)를 참고하세요. 현재 단계는 P0(Android)입니다.
+대상별 구조는 [최상위 README](../README.md#flutter-plugin-구조), 설계는 [docs/plugin-design.md](../docs/plugin-design.md)를 참고하세요.
 
 ```
 native/rdp_bridge/                    # C: FreeRDP 위의 작은 API + Android 프레임 싱크(JNI)
@@ -8,7 +8,8 @@ packages/
 ├── remote_desktop/                   # 앱이 쓰는 패키지: RdpSession, RemoteView 위젯, example/
 ├── remote_desktop_platform_interface/  # 텍스처 생성·해제 인터페이스 (MethodChannel 기본 구현)
 ├── remote_desktop_ffi/               # rdp_bridge의 dart:ffi 바인딩 (Flutter 없이도 사용)
-└── remote_desktop_android/           # Kotlin: SurfaceProducer 텍스처, librdp_bridge.so 빌드
+├── remote_desktop_android/           # Kotlin: SurfaceProducer 텍스처, librdp_bridge.so 빌드
+└── remote_desktop_darwin/            # Swift: macOS CVPixelBuffer 텍스처, 정적 라이브러리 링크
 ```
 
 ## Android 앱 빌드 (macOS, Linux/WSL2 공통)
@@ -53,6 +54,50 @@ flutter build apk --target-platform android-arm64        # 배포용 APK
 
 SSH 터널로 접속하려면 폰에서 터널을 열 수 없으므로, PC에서 `adb reverse tcp:13389 tcp:13389`를 실행해
 폰의 `127.0.0.1:13389`를 PC의 터널로 연결합니다(USB 디버깅 중일 때).
+
+## macOS 데스크톱 앱 빌드 (iMac 등)
+
+> 이 부분은 작성만 하고 Mac에서 실행해 보지 못했습니다. 오류가 나면 로그를 기준으로 고쳐야 합니다.
+
+### 1. 도구 준비
+
+| 도구 | 설치 |
+| --- | --- |
+| Xcode (전체) | App Store에서 설치. Command Line Tools만으로는 Flutter macOS 앱을 빌드할 수 없습니다 |
+| CocoaPods | 관리자 권한 없이 `gem install --user-install cocoapods` 후 gem의 `bin` 폴더를 PATH에 추가 |
+| Flutter SDK | 위 Android와 같음. `flutter config --enable-macos-desktop` |
+
+### 2. FreeRDP와 rdp_bridge 빌드
+
+```sh
+bash scripts/build.sh macos-x86_64    # Intel Mac (iMac)
+bash scripts/build.sh macos-arm64     # Apple Silicon Mac. 릴리스(유니버설) 빌드에는 둘 다 필요
+```
+
+끝나면 `packages/remote_desktop_darwin/macos/Libraries/`에 `librdp_bridge.a`, `libfreerdp_all.a`가 생깁니다.
+
+### 3. 예제 앱 실행
+
+```sh
+cd packages/remote_desktop/example
+flutter create --platforms=macos --org com.aha645 --project-name remote_desktop_example .
+```
+
+만들어진 `macos/Runner/DebugProfile.entitlements`와 `Release.entitlements` 두 파일에 서버 접속 권한을 추가합니다.
+
+```xml
+<key>com.apple.security.network.client</key>
+<true/>
+```
+
+```sh
+flutter run -d macos          # 지금 Mac의 CPU용으로 빌드·실행
+flutter build macos           # 릴리스. macos-x86_64와 macos-arm64를 모두 빌드해 두어야 함
+```
+
+- `macos/Podfile`의 `use_frameworks!`는 지우지 마세요. plugin이 FreeRDP를 자기 프레임워크 안에 링크합니다.
+- "library not found" 또는 `librdp_bridge.a`를 찾지 못한다는 오류는 2단계를 건너뛴 경우입니다.
+- 마이크를 쓰려면 `com.apple.security.device.audio-input` 권한과 `Info.plist`의 `NSMicrophoneUsageDescription`이 더 필요합니다.
 
 ## 기기 없이 확인하기
 

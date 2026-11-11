@@ -163,7 +163,7 @@ await session.connect();                              // rdpb_connect
 | 플랫폼 | Flutter 텍스처 | 싱크 `begin` / `end` 구현 | plugin 언어 |
 | --- | --- | --- | --- |
 | Android | `TextureRegistry.SurfaceProducer` → `Surface` | JNI로 `ANativeWindow_fromSurface`. `begin` = `ANativeWindow_setBuffersGeometry` + `ANativeWindow_lock`(무효 영역 전달), `end` = `ANativeWindow_unlockAndPost`(알림 포함) | Kotlin + C(JNI, bridge .so에 포함) |
-| iOS·macOS | `FlutterTexture` (`copyPixelBuffer`) | `CVPixelBufferPool`(IOSurface 지원)에서 버퍼 2개를 교대로 씁니다. `begin` = `CVPixelBufferLockBaseAddress`, `end` = unlock + `textureFrameAvailable` | Swift + C 함수 포인터 |
+| iOS·macOS | `FlutterTexture` (`copyPixelBuffer`) | `CVPixelBufferPool`(IOSurface 지원)에서 **프레임마다 새 버퍼**를 받아 화면 전체를 복사합니다. `begin` = `CVPixelBufferLockBaseAddress`, `end` = unlock + 최신 프레임 교체 + `textureFrameAvailable`. 버퍼 2개를 교대로 쓰면 엔진이 읽는 버퍼에 다시 쓰게 되어, 넘긴 버퍼에는 다시 쓰지 않는 방식으로 바꿨습니다(전체 복사 비용은 추후 최적화) | Swift + C 함수 포인터 |
 | Windows | `FlutterDesktopPixelBufferTextureConfig` | 내부 BGRA 버퍼 2개를 교대로 씁니다. `end` = `MarkTextureFrameAvailable`, 엔진이 콜백으로 최신 버퍼를 가져갑니다. 성능이 부족하면 D3D11 공유 텍스처(`FlutterDesktopGpuSurfaceDescriptor`)로 바꿉니다 | C++ |
 | Linux | `FlPixelBufferTexture` 서브클래스 | 내부 버퍼 2개를 교대로 쓰고 `fl_texture_registrar_mark_texture_frame_available`로 알립니다 | C (GTK) |
 
@@ -191,7 +191,7 @@ await session.connect();                              // rdpb_connect
 | android-arm64 | `dist/android-arm64/{include,lib}` 정적 라이브러리 7개 | 그대로 사용. plugin의 CMake가 `rdp_bridge` + 정적 라이브러리를 `librdp_bridge.so` 하나로 링크 | ✅ FreeRDP 빌드·링크 확인 (iMac), 🔧 plugin과 함께 APK 빌드는 미검증 |
 | android-x86_64 | `dist/android-x86_64/{include,lib}` (에뮬레이터용, Intel 호스트) | 위와 같음 | 🔧 타깃 추가, 실빌드 미검증 |
 | windows-x86_64 | `sdl-freerdp.exe` | **`rdp_bridge.dll`** (llvm-mingw, C 함수만 내보냄). Flutter C++ plugin(MSVC)은 이 DLL을 링크하지 않고 `sinkPtr`만 주고받으므로 컴파일러가 달라도 됩니다 | 🔧 bridge 추가 |
-| macos-* | `sdl-freerdp` | 정적 라이브러리 → `rdp_bridge` 포함 dylib/xcframework | 🔧 SDK 출력 추가 |
+| macos-* | `sdl-freerdp` + `lib/libfreerdp_all.a`, `lib/librdp_bridge.a` | 두 정적 라이브러리를 `packages/remote_desktop_darwin/macos/Libraries/`에 복사(여러 CPU는 `lipo`로 합침). plugin의 podspec이 자기 프레임워크에 링크하고 Dart는 `DynamicLibrary.process()`로 찾음 | 🔧 스크립트·plugin 작성됨, Mac 빌드 미검증 |
 | ios-arm64 / 시뮬레이터 | 없음 | 정적 라이브러리 xcframework | 🔧 타깃 추가 (Xcode 필요) |
 | linux-x86_64 / arm64 | `sdl-freerdp` (WSL2) | 정적 라이브러리 → `librdp_bridge.so` | 🔧 SDK 출력 추가, ❓ WSL2 실빌드 미검증 |
 
@@ -285,7 +285,7 @@ FreeRDP 빌드 설정(`build/<타깃>/FreeRDP/CMakeCache.txt`)에서 확인한 �
 | --- | --- | --- |
 | P0 | `rdp_bridge` C API + Android plugin | Android에서 접속, 화면 표시, 키보드·마우스 동작. **코드 작성됨**(`native/rdp_bridge`, `packages/`). bridge와 Dart FFI는 Linux에서 FreeRDP 예제 서버로 확인, Android 기기 실행은 미검증 |
 | P1 | 인증·인증서 UI, 해상도 변경, 클립보드 텍스트, 소리 재생 | gnome-remote-desktop에서 일상 사용 가능 |
-| P2 | Windows(`rdp_bridge.dll`) · macOS plugin | 데스크톱 2종 동작 |
+| P2 | Windows(`rdp_bridge.dll`) · macOS plugin | 데스크톱 2종 동작. **macOS 코드 작성됨**(`packages/remote_desktop_darwin`), Mac 빌드·실행은 미검증. Windows는 시작 전 |
 | P3 | iOS (Xcode, AudioQueue 백엔드, 백그라운드 처리) | iPhone 동작 |
 | P4 | Linux plugin (WSL2 빌드 검증 포함) | Linux 동작 |
 | P5 | 마이크, 클립보드 파일·이미지 | 서버 지원 범위 안에서 동작 |

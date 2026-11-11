@@ -1,5 +1,7 @@
 # rdp_bridge: FreeRDP·OpenSSL 정적 라이브러리를 묶어 공유 라이브러리 하나로 만듭니다.
 #   Android: Flutter plugin(packages/remote_desktop_android)의 Gradle이 이 파일을 부릅니다.
+#   macOS:   scripts/build.sh가 부릅니다. 정적 라이브러리(librdp_bridge.a)만 만들고,
+#            링크는 Flutter plugin(packages/remote_desktop_darwin)의 Xcode 빌드가 합니다.
 #   그 밖:   cmake -S native/rdp_bridge -B <빌드 폴더> -DRDPB_FREERDP_DIR=<include, lib가 있는 폴더>
 cmake_minimum_required(VERSION 3.22)
 project(rdp_bridge C)
@@ -36,12 +38,20 @@ if(ANDROID)
   list(APPEND _sources android/rdp_bridge_android.c)
 endif()
 
-add_library(rdp_bridge SHARED ${_sources})
+if(APPLE)
+  add_library(rdp_bridge STATIC ${_sources})
+else()
+  add_library(rdp_bridge SHARED ${_sources})
+endif()
 target_compile_options(rdp_bridge PRIVATE -Wall -Wextra -fvisibility=hidden)
 target_include_directories(
   rdp_bridge SYSTEM PRIVATE "${RDPB_FREERDP_DIR}/include/freerdp3" "${RDPB_FREERDP_DIR}/include/winpr3"
                             "${RDPB_FREERDP_DIR}/include"
 )
+
+if(APPLE)
+  return() # 링크는 Xcode에서
+endif()
 
 # 정적 라이브러리끼리 서로 참조하므로 그룹으로 묶어 링크합니다.
 #   libfreerdp-client3 → 채널 내부 라이브러리(*-common) → libfreerdp3 → libwinpr3 → OpenSSL

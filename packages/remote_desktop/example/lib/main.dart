@@ -312,27 +312,27 @@ class _SessionPageState extends State<SessionPage> {
       ),
       body: switch (_state) {
         RemoteState.connected when view != null => RemoteView(
-          key: _viewKey,
-          controller: view,
-          matchViewSize: true,
-        ),
-        RemoteState.disconnected => Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                _error == null ? '연결이 끝났습니다' : '연결 실패: $_error',
-                style: const TextStyle(color: Colors.white),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 16),
-              FilledButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('돌아가기'),
-              ),
-            ],
+            key: _viewKey,
+            controller: view,
+            matchViewSize: true,
           ),
-        ),
+        RemoteState.disconnected => Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  _error == null ? '연결이 끝났습니다' : '연결 실패: $_error',
+                  style: const TextStyle(color: Colors.white),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 16),
+                FilledButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('돌아가기'),
+                ),
+              ],
+            ),
+          ),
         _ => const Center(child: CircularProgressIndicator()),
       },
     );

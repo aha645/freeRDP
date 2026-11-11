@@ -36,3 +36,5 @@ packages/*/pubspec.lock
 local.properties
 *.iml
 packages/**/build/
+# scripts/build.sh macos-* 가 만드는 plugin용 정적 라이브러리
+packages/remote_desktop_darwin/macos/Libraries/

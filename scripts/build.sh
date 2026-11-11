@@ -7,6 +7,7 @@
 #   Linux x86_64 (Windows의 WSL2) windows-x86_64, android-arm64, android-x86_64, linux-x86_64, linux-arm64
 #
 #   데스크톱 타깃 → dist/<타깃>/sdl-freerdp(.exe)        (SDL3 클라이언트 실행 파일)
+#   macos-*       → 추가로 dist/<타깃>/{include,lib}     (Flutter plugin용 정적 라이브러리)
 #   android-arm64 → dist/android-arm64/{include,lib}     (앱에 넣을 정적 라이브러리, 실제 기기용)
 #   android-x86_64 → dist/android-x86_64/{include,lib}   (같은 형태, Intel 호스트의 에뮬레이터용)
 #
@@ -245,6 +246,31 @@ if [[ "$TARGET" == android-* ]]; then
 fi
 
 cp "$WORK/install/bin/$EXE" "$OUT/"
+
+if [[ "$TARGET" == macos-* ]]; then
+  # Flutter plugin(packages/remote_desktop_darwin)용 정적 라이브러리
+  #   libfreerdp_all.a : FreeRDP·WinPR·채널·OpenSSL을 하나로 묶은 것
+  #   librdp_bridge.a  : native/rdp_bridge (dart:ffi가 부르는 C API)
+  mkdir -p "$OUT/lib"
+  cp -R "$WORK/install/include" "$OUT/"
+  cp -R "$DEPS/include/openssl" "$OUT/include/"
+  cp "$WORK/install/lib/libfreerdp3.a" "$OUT/lib/"
+  SDK_LIBS=("$WORK/install/lib/libfreerdp-client3.a" "$WORK/install/lib/libfreerdp3.a"
+    "$WORK/install/lib/libwinpr3.a" "$DEPS/lib/libssl.a" "$DEPS/lib/libcrypto.a")
+  while IFS= read -r lib; do SDK_LIBS+=("$lib"); done \
+    < <(find "$WORK/FreeRDP/channels" -name '*-common.a')
+  libtool -static -o "$OUT/lib/libfreerdp_all.a" "${SDK_LIBS[@]}"
+  cmake_build rdp_bridge "$ROOT/native/rdp_bridge" "$WORK/bridge-install" -DRDPB_FREERDP_DIR="$OUT"
+  cp "$WORK/rdp_bridge/librdp_bridge.a" "$OUT/lib/"
+
+  # plugin 폴더에는 지금까지 빌드한 CPU 종류를 모두 합쳐 넣음 (Intel만, Apple Silicon만, 또는 둘 다)
+  PLUGIN_LIBS="$ROOT/packages/remote_desktop_darwin/macos/Libraries"
+  mkdir -p "$PLUGIN_LIBS"
+  for name in rdp_bridge freerdp_all; do
+    lipo -create "$ROOT"/dist/macos-*/lib/lib$name.a -output "$PLUGIN_LIBS/lib$name.a"
+  done
+  echo "plugin용 라이브러리: $PLUGIN_LIBS ($(lipo -archs "$PLUGIN_LIBS/librdp_bridge.a"))"
+fi
 [[ "$TARGET" == windows-* ]] && cp "$ROOT/scripts/connect.bat" "$OUT/"   # Windows용 접속 스크립트
 
 # 시스템 외 동적 라이브러리에 의존하지 않는지 확인

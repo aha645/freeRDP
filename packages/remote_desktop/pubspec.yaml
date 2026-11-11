@@ -12,6 +12,8 @@ dependencies:
     sdk: flutter
   remote_desktop_android:
     path: ../remote_desktop_android
+  remote_desktop_darwin:
+    path: ../remote_desktop_darwin
   remote_desktop_ffi:
     path: ../remote_desktop_ffi
   remote_desktop_platform_interface:
@@ -25,3 +27,5 @@ flutter:
     platforms:
       android:
         default_package: remote_desktop_android
+      macos:
+        default_package: remote_desktop_darwin

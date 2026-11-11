@@ -56,7 +56,7 @@ const _certMismatch = 2;
 /// FreeRDP(rdp_bridge) 세션.
 class RdpSession implements RemoteSession {
   RdpSession(RdpConfig config, {RdpBridge? bridge})
-    : _bridge = bridge ?? RdpBridge.shared {
+      : _bridge = bridge ?? RdpBridge.shared {
     _callable = NativeCallable<RdpbEventCallback>.listener(_onEvent);
     using((arena) {
       final cfg = arena<RdpbConfig>();
@@ -124,9 +124,8 @@ class RdpSession implements RemoteSession {
               subject: line(2),
               issuer: line(3),
               fingerprint: line(4),
-              oldFingerprint: lines.length > 5 && lines[5].isNotEmpty
-                  ? lines[5]
-                  : null,
+              oldFingerprint:
+                  lines.length > 5 && lines[5].isNotEmpty ? lines[5] : null,
               changed: ev.code & _certChanged != 0,
               hostMismatch: ev.code & _certMismatch != 0,
             ),
@@ -146,8 +145,9 @@ class RdpSession implements RemoteSession {
   @override
   void connect() {
     if (!_alive) throw StateError('이미 dispose된 세션입니다.');
-    if (_bridge.connect(_handle) != 0)
+    if (_bridge.connect(_handle) != 0) {
       throw StateError('rdpb_connect 실패 (이미 접속을 시작했을 수 있음)');
+    }
   }
 
   @override
@@ -181,8 +181,9 @@ class RdpSession implements RemoteSession {
 
   @override
   void sendKey(int scancode, {bool extended = false, required bool down}) {
-    if (_alive)
+    if (_alive) {
       _bridge.sendKey(_handle, scancode, extended ? 1 : 0, down ? 1 : 0);
+    }
   }
 
   @override
@@ -206,13 +207,14 @@ class RdpSession implements RemoteSession {
     int y, {
     required bool down,
   }) {
-    if (_alive)
+    if (_alive) {
       _bridge.sendMouse(
         _handle,
         _mouseButtons[button]! | (down ? _mouseDown : 0),
         x,
         y,
       );
+    }
   }
 
   @override
@@ -235,11 +237,12 @@ class RdpSession implements RemoteSession {
 
   @override
   void attachSink(int sinkAddress) {
-    if (_alive)
+    if (_alive) {
       _bridge.attachSink(
         _handle,
         Pointer<RdpbFrameSink>.fromAddress(sinkAddress),
       );
+    }
   }
 
   @override

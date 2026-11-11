@@ -65,8 +65,7 @@ abstract final class RdpbEventType {
 /// 불러온 rdp_bridge 라이브러리의 함수 모음.
 class RdpBridge {
   RdpBridge(DynamicLibrary lib)
-    : create = lib
-          .lookupFunction<
+      : create = lib.lookupFunction<
             Pointer<RdpbSession> Function(
               Pointer<RdpbConfig>,
               Pointer<NativeFunction<RdpbEventCallback>>,
@@ -76,86 +75,59 @@ class RdpBridge {
               Pointer<RdpbConfig>,
               Pointer<NativeFunction<RdpbEventCallback>>,
               Pointer<Void>,
-            )
-          >('rdpb_create'),
-      attachSink = lib
-          .lookupFunction<
+            )>('rdpb_create'),
+        attachSink = lib.lookupFunction<
             Int32 Function(Pointer<RdpbSession>, Pointer<RdpbFrameSink>),
-            int Function(Pointer<RdpbSession>, Pointer<RdpbFrameSink>)
-          >('rdpb_attach_sink'),
-      connect = lib
-          .lookupFunction<
-            Int32 Function(Pointer<RdpbSession>),
-            int Function(Pointer<RdpbSession>)
-          >('rdpb_connect'),
-      disconnect = lib
-          .lookupFunction<
-            Void Function(Pointer<RdpbSession>),
-            void Function(Pointer<RdpbSession>)
-          >('rdpb_disconnect'),
-      destroy = lib
-          .lookupFunction<
-            Void Function(Pointer<RdpbSession>),
-            void Function(Pointer<RdpbSession>)
-          >('rdpb_destroy'),
-      eventFree = lib
-          .lookupFunction<
-            Void Function(Pointer<RdpbEvent>),
-            void Function(Pointer<RdpbEvent>)
-          >('rdpb_event_free'),
-      answerAuth = lib
-          .lookupFunction<
+            int Function(Pointer<RdpbSession>,
+                Pointer<RdpbFrameSink>)>('rdpb_attach_sink'),
+        connect = lib.lookupFunction<Int32 Function(Pointer<RdpbSession>),
+            int Function(Pointer<RdpbSession>)>('rdpb_connect'),
+        disconnect = lib.lookupFunction<Void Function(Pointer<RdpbSession>),
+            void Function(Pointer<RdpbSession>)>('rdpb_disconnect'),
+        destroy = lib.lookupFunction<Void Function(Pointer<RdpbSession>),
+            void Function(Pointer<RdpbSession>)>('rdpb_destroy'),
+        eventFree = lib.lookupFunction<Void Function(Pointer<RdpbEvent>),
+            void Function(Pointer<RdpbEvent>)>('rdpb_event_free'),
+        answerAuth = lib.lookupFunction<
             Void Function(Pointer<RdpbSession>, Int32, Pointer<Utf8>),
-            void Function(Pointer<RdpbSession>, int, Pointer<Utf8>)
-          >('rdpb_answer_auth'),
-      answerCert = lib
-          .lookupFunction<
+            void Function(
+                Pointer<RdpbSession>, int, Pointer<Utf8>)>('rdpb_answer_auth'),
+        answerCert = lib.lookupFunction<
             Void Function(Pointer<RdpbSession>, Int32, Int32),
-            void Function(Pointer<RdpbSession>, int, int)
-          >('rdpb_answer_cert'),
-      sendKey = lib
-          .lookupFunction<
+            void Function(Pointer<RdpbSession>, int, int)>('rdpb_answer_cert'),
+        sendKey = lib.lookupFunction<
             Void Function(Pointer<RdpbSession>, Uint16, Int32, Int32),
-            void Function(Pointer<RdpbSession>, int, int, int)
-          >('rdpb_send_key'),
-      sendUnicode = lib
-          .lookupFunction<
+            void Function(
+                Pointer<RdpbSession>, int, int, int)>('rdpb_send_key'),
+        sendUnicode = lib.lookupFunction<
             Void Function(Pointer<RdpbSession>, Uint16, Int32),
-            void Function(Pointer<RdpbSession>, int, int)
-          >('rdpb_send_unicode'),
-      sendMouse = lib
-          .lookupFunction<
+            void Function(Pointer<RdpbSession>, int, int)>('rdpb_send_unicode'),
+        sendMouse = lib.lookupFunction<
             Void Function(Pointer<RdpbSession>, Uint16, Int32, Int32),
-            void Function(Pointer<RdpbSession>, int, int, int)
-          >('rdpb_send_mouse'),
-      sendWheel = lib
-          .lookupFunction<
+            void Function(
+                Pointer<RdpbSession>, int, int, int)>('rdpb_send_mouse'),
+        sendWheel = lib.lookupFunction<
             Void Function(Pointer<RdpbSession>, Int32, Int32),
-            void Function(Pointer<RdpbSession>, int, int)
-          >('rdpb_send_wheel'),
-      resize = lib
-          .lookupFunction<
+            void Function(Pointer<RdpbSession>, int, int)>('rdpb_send_wheel'),
+        resize = lib.lookupFunction<
             Void Function(Pointer<RdpbSession>, Int32, Int32),
-            void Function(Pointer<RdpbSession>, int, int)
-          >('rdpb_resize'),
-      clipboardSetText = lib
-          .lookupFunction<
+            void Function(Pointer<RdpbSession>, int, int)>('rdpb_resize'),
+        clipboardSetText = lib.lookupFunction<
             Void Function(Pointer<RdpbSession>, Pointer<Utf8>),
-            void Function(Pointer<RdpbSession>, Pointer<Utf8>)
-          >('rdpb_clipboard_set_text'),
-      requestRedraw = lib
-          .lookupFunction<
-            Void Function(Pointer<RdpbSession>),
-            void Function(Pointer<RdpbSession>)
-          >('rdpb_request_redraw');
+            void Function(Pointer<RdpbSession>,
+                Pointer<Utf8>)>('rdpb_clipboard_set_text'),
+        requestRedraw = lib.lookupFunction<Void Function(Pointer<RdpbSession>),
+            void Function(Pointer<RdpbSession>)>('rdpb_request_redraw');
 
   /// 플랫폼 기본 이름으로 라이브러리를 엽니다. [path]를 주면 그 파일을 엽니다.
   factory RdpBridge.open([String? path]) {
     if (path != null) return RdpBridge(DynamicLibrary.open(path));
-    if (Platform.isWindows)
+    if (Platform.isWindows) {
       return RdpBridge(DynamicLibrary.open('rdp_bridge.dll'));
+    }
     if (Platform.isMacOS || Platform.isIOS) {
-      return RdpBridge(DynamicLibrary.open('rdp_bridge.framework/rdp_bridge'));
+      // plugin 프레임워크 안에 정적으로 들어 있어 앱이 시작할 때 이미 올라와 있습니다.
+      return RdpBridge(DynamicLibrary.process());
     }
     return RdpBridge(DynamicLibrary.open('librdp_bridge.so')); // Android, Linux
   }
@@ -169,28 +141,26 @@ class RdpBridge {
     Pointer<RdpbConfig>,
     Pointer<NativeFunction<RdpbEventCallback>>,
     Pointer<Void>,
-  )
-  create;
+  ) create;
   final int Function(Pointer<RdpbSession>, Pointer<RdpbFrameSink>) attachSink;
   final int Function(Pointer<RdpbSession>) connect;
   final void Function(Pointer<RdpbSession>) disconnect;
   final void Function(Pointer<RdpbSession>) destroy;
   final void Function(Pointer<RdpbEvent>) eventFree;
   final void Function(Pointer<RdpbSession>, int ok, Pointer<Utf8> password)
-  answerAuth;
+      answerAuth;
   final void Function(Pointer<RdpbSession>, int accept, int remember)
-  answerCert;
+      answerCert;
   final void Function(
     Pointer<RdpbSession>,
     int scancode,
     int extended,
     int down,
-  )
-  sendKey;
+  ) sendKey;
   final void Function(Pointer<RdpbSession>, int codeUnit, int down) sendUnicode;
   final void Function(Pointer<RdpbSession>, int flags, int x, int y) sendMouse;
   final void Function(Pointer<RdpbSession>, int delta, int horizontal)
-  sendWheel;
+      sendWheel;
   final void Function(Pointer<RdpbSession>, int width, int height) resize;
   final void Function(Pointer<RdpbSession>, Pointer<Utf8>) clipboardSetText;
   final void Function(Pointer<RdpbSession>) requestRedraw;
