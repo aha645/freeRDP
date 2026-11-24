@@ -14,15 +14,16 @@ bash scripts/build.sh <타깃>
 
 | 타깃 | 결과물 | macOS 호스트 (iMac) | Linux 호스트 (Windows의 WSL2) |
 | --- | --- | --- | --- |
-| `macos-x86_64` | `dist/macos-x86_64/sdl-freerdp` | ✅ 빌드·실행 확인 | ❌ Apple SDK가 macOS에만 있음 |
-| `macos-arm64` | `dist/macos-arm64/sdl-freerdp` | ✅ 빌드 확인 | ❌ |
+| `macos-x86_64` | `dist/macos-x86_64/sdl-freerdp`, plugin용 `lib/` | ✅ 빌드·실행 확인 | ❌ Apple SDK가 macOS에만 있음 |
+| `macos-arm64` | `dist/macos-arm64/sdl-freerdp`, plugin용 `lib/` | ✅ 빌드 확인 | ❌ |
 | `windows-x86_64` | `dist/windows-x86_64/sdl-freerdp.exe`, `connect.bat` | ✅ 빌드 확인 | 지원 (미검증) |
 | `android-arm64` | `dist/android-arm64/{include,lib}` 앱용 정적 라이브러리 | ✅ 빌드·링크 확인 | 지원 (미검증) |
+| `android-x86_64` | `dist/android-x86_64/{include,lib}` 에뮬레이터용 | 지원 (미검증) | 지원 (미검증) |
 | `linux-x86_64` | `dist/linux-x86_64/sdl-freerdp` | ❌ | 지원 (미검증) |
 | `linux-arm64` | `dist/linux-arm64/sdl-freerdp` | ❌ | 지원 (미검증, 교차 빌드) |
 
 - **데스크톱 타깃:** SDL3 클라이언트 실행 파일 하나를 만듭니다. 다른 라이브러리를 정적으로 포함하므로 이 파일만 복사하면 대상 컴퓨터에서 실행됩니다(Linux는 X11·PulseAudio 같은 데스크톱 시스템 라이브러리 사용).
-- **android-arm64:** 실행 파일이 아니라 Flutter 앱(plugin)에 넣을 FreeRDP·OpenSSL 헤더와 정적 라이브러리를 만듭니다. 설계는 [docs/plugin-design.md](docs/plugin-design.md)를 참고하세요.
+- **android-arm64, android-x86_64:** 실행 파일이 아니라 Flutter 앱(plugin)에 넣을 FreeRDP·OpenSSL 헤더와 정적 라이브러리를 만듭니다. 설계는 [docs/plugin-design.md](docs/plugin-design.md), plugin과 앱 빌드 방법은 [packages/README.md](packages/README.md)를 참고하세요.
 - **"미검증":** Linux 호스트용 스크립트는 작성했지만 WSL2에서 아직 실제로 빌드해 보지 않았다는 뜻입니다.
 
 ## 폴더 구조
@@ -36,6 +37,8 @@ rdp/
 │   └── connect.bat     # 접속(Windows): 빌드 시 dist/windows-x86_64/에 함께 복사
 ├── docs/
 │   └── plugin-design.md  # Flutter FFI plugin 설계
+├── native/rdp_bridge/  # Flutter plugin용 C bridge (FreeRDP 위의 작은 API)
+├── packages/           # Flutter plugin (Android, macOS)과 예제 앱 — 아래 "Flutter plugin 구조" 참고
 ├── src/                # (자동 생성) 소스 압축 파일과 압축을 푼 소스
 │   ├── openssl-3.5.0/   SDL3-3.2.28/   freetype-2.13.3/
 │   ├── SDL3_ttf-3.2.2/  freerdp-3.24.2/
@@ -68,6 +71,78 @@ rdp/
    - 실행 파일이 OpenSSL·SDL·FreeRDP를 동적 라이브러리로 요구하지 않는지 확인합니다.
    - `dist/<타깃>/`에 복사합니다.
    - 호스트와 같은 타깃이면 `sdl-freerdp /version`을 실행해 동작을 확인합니다.
+
+## Flutter plugin 구조
+
+FreeRDP를 Flutter 앱에서 쓰기 위한 plugin입니다. 세 가지 대상(Android arm64, Intel Mac, Apple Silicon Mac)이
+**같은 C 코드와 같은 Dart 코드**를 쓰고, 화면을 Flutter 텍스처에 넘기는 부분만 플랫폼별로 다릅니다.
+빌드 순서는 [packages/README.md](packages/README.md), 설계 배경은 [docs/plugin-design.md](docs/plugin-design.md)에 있습니다.
+
+### 공통 계층
+
+```
+Flutter 앱 (Dart)
+ └─ packages/remote_desktop            RdpSession, RemoteView 위젯, 키보드·마우스·터치 입력
+     ├─ remote_desktop_ffi             dart:ffi 바인딩 ── 제어·이벤트 ──▶ rdp_bridge (C)
+     └─ remote_desktop_platform_interface   텍스처 만들기·없애기 (MethodChannel)
+         └─ 플랫폼 plugin               remote_desktop_android  또는  remote_desktop_darwin
+                                          │ 텍스처와 "프레임 싱크"를 만들어 주소를 Dart에 돌려줌
+native/rdp_bridge (C, 모든 대상 공통)  ◀──┘ 싱크에 픽셀을 직접 씀 (Dart를 거치지 않음)
+ └─ FreeRDP 3.24.2 + OpenSSL 3.5.0 정적 라이브러리 (scripts/build.sh가 대상별로 빌드)
+```
+
+- **Dart가 하는 일:** 접속·종료, 입력 전달, 비밀번호·인증서 질문에 답하기. 화면 픽셀은 다루지 않습니다.
+- **rdp_bridge가 하는 일:** FreeRDP 세션을 자체 스레드에서 돌리고, 바뀐 화면을 프레임 싱크에 복사합니다.
+- **플랫폼 plugin이 하는 일:** Flutter 텍스처를 만들고 그 뒤에 프레임 싱크(잠그기 `begin` / 풀기 `end`)를 붙입니다.
+
+### 대상별 차이
+
+| | Android arm64 | Mac Intel (x86_64) | Mac Apple Silicon (arm64) |
+| --- | --- | --- | --- |
+| FreeRDP 빌드 | `build.sh android-arm64` | `build.sh macos-x86_64` | `build.sh macos-arm64` |
+| 빌드 결과 | `dist/android-arm64/{include,lib}` 정적 라이브러리 | `dist/macos-x86_64/lib/libfreerdp_all.a`, `librdp_bridge.a` | `dist/macos-arm64/lib/` 같은 두 파일 |
+| plugin 패키지 | `packages/remote_desktop_android` | `packages/remote_desktop_darwin` | 같은 패키지 |
+| plugin 언어 | Kotlin + C(JNI) | Swift + C | 같음 |
+| rdp_bridge를 누가 빌드하나 | 앱 빌드 때 Gradle(NDK, CMake) | `build.sh`가 미리 빌드 | 같음 |
+| 앱에 들어가는 형태 | `librdp_bridge.so` 하나 (FreeRDP 포함) | plugin 프레임워크 안에 정적으로 포함 | 같음 |
+| Dart가 여는 방법 | `DynamicLibrary.open('librdp_bridge.so')` | `DynamicLibrary.process()` | 같음 |
+| Flutter 텍스처 | `SurfaceProducer`의 `Surface` | `FlutterTexture` (`CVPixelBuffer`) | 같음 |
+| 프레임 싱크 | `ANativeWindow_lock`으로 Surface 버퍼에 직접 씀. 바뀐 영역만 복사 | 프레임마다 새 `CVPixelBuffer`에 화면 전체를 복사한 뒤 교체 | 같음 |
+| 픽셀 순서 | R,G,B,X | B,G,R,A | 같음 |
+| 소리 | OpenSL ES | CoreAudio | 같음 |
+| 싱크 소스 | `native/rdp_bridge/android/rdp_bridge_android.c` | `packages/remote_desktop_darwin/macos/Classes/RdpAppleSink.c` | 같음 |
+
+- **Intel Mac과 Apple Silicon Mac은 소스가 완전히 같습니다.** 다른 것은 `build.sh`에 주는 타깃 이름뿐입니다.
+  `build.sh macos-*`를 실행할 때마다 지금까지 빌드한 CPU 종류를 `lipo`로 합쳐
+  `packages/remote_desktop_darwin/macos/Libraries/`에 넣습니다. 한쪽만 빌드했으면 그 CPU용, 둘 다 빌드했으면 양쪽에서 도는 유니버설 라이브러리가 됩니다.
+- `flutter run`(디버그)은 지금 Mac의 CPU용만 빌드하므로 한쪽만 있어도 됩니다. `flutter build macos`(릴리스)는 기본이 유니버설이라 **두 타깃을 모두 빌드해 두어야** 합니다.
+- Android 에뮬레이터(Intel 호스트)용으로 `android-x86_64` 타깃도 있습니다. 구조는 Android arm64와 같습니다.
+
+### 스레드와 공유 자원
+
+rdp_bridge에는 세션 스레드와 FreeRDP의 동적 채널 스레드가 있고, 둘 다 프레임 싱크를 부를 수 있습니다(한 번에 하나만).
+
+| 함께 쓰는 자원 | 쓰는 스레드 | 보호 방법 |
+| --- | --- | --- |
+| 입력·명령 큐, 질문에 대한 응답 | Dart, 세션 | bridge의 `lock` |
+| 싱크 포인터와 그리는 구간 | Dart, 세션, 동적 채널 | bridge의 `sink_lock` |
+| 화면 버퍼(FreeRDP) | 세션, 동적 채널 | FreeRDP의 update 잠금 |
+| 해상도 변경 상태 | 세션, 동적 채널 | bridge의 `disp_lock` |
+| Android `Surface` | 그리는 스레드, Android 메인 스레드 | 싱크의 mutex (잠금~해제 동안 유지) |
+| macOS 최신 프레임 포인터 | 그리는 스레드, Flutter 래스터 스레드 | 싱크의 mutex. 넘긴 버퍼에는 다시 쓰지 않음 |
+| macOS 싱크 자체(해제 시점) | 메인 스레드, 래스터 스레드 | Swift `RemoteTexture`의 `NSLock` |
+
+텍스처를 없앨 때는 **세션에서 싱크를 먼저 떼고**(`RemoteViewController.dispose()`가 처리) 그다음 텍스처를 해제해야 합니다.
+
+### 확인된 범위
+
+| 항목 | 상태 |
+| --- | --- |
+| rdp_bridge, Dart FFI | Linux에서 FreeRDP 예제 서버로 접속·화면 수신·입력 확인 |
+| Dart·Flutter 코드 | 정적 분석 통과 (Flutter 3.47.9) |
+| Android plugin | Kotlin 컴파일 확인. APK 빌드·기기 실행은 미검증 |
+| macOS plugin | C 싱크 문법 확인만 함. Swift 컴파일, Xcode 빌드, 실행은 미검증 |
+| gnome-remote-desktop 접속 | 미검증 |
 
 ## 사용한 소스와 라이선스
 

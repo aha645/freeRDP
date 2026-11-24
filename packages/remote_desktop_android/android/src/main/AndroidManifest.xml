@@ -1,0 +1,4 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- 원격 서버 접속 (앱의 매니페스트에 합쳐집니다) -->
+    <uses-permission android:name="android.permission.INTERNET" />
+</manifest>
